@@ -1,0 +1,744 @@
+{
+    "info": {
+        "_postman_id": "expense-splitter-neo4j",
+        "name": "Expense Splitter - Neo4j Backend",
+        "description": "Complete API testing collection for BCSE406L NoSQL Assignment",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    },
+    "item": [
+        {
+            "name": "1. Health Check",
+            "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                    "raw": "http://localhost:5000/api/health",
+                    "protocol": "http",
+                    "host": [
+                        "localhost"
+                    ],
+                    "port": "5000",
+                    "path": [
+                        "api",
+                        "health"
+                    ]
+                },
+                "description": "Check if the API server is running"
+            },
+            "response": []
+        },
+        {
+            "name": "2. Register User 1",
+            "event": [
+                {
+                    "listen": "test",
+                    "script": {
+                        "exec": [
+                            "if (pm.response.code === 201) {",
+                            "    var jsonData = pm.response.json();",
+                            "    pm.environment.set(\"user1_id\", jsonData.user.id);",
+                            "    pm.environment.set(\"user1_email\", jsonData.user.email);",
+                            "    console.log(\"User 1 ID saved: \" + jsonData.user.id);",
+                            "}"
+                        ],
+                        "type": "text/javascript"
+                    }
+                }
+            ],
+            "request": {
+                "method": "POST",
+                "header": [
+                    {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                    }
+                ],
+                "body": {
+                    "mode": "raw",
+                    "raw": "{\n  \"email\": \"alice@vit.edu\",\n  \"name\": \"Alice Kumar\",\n  \"password\": \"Alice123\"\n}"
+                },
+                "url": {
+                    "raw": "http://localhost:5000/api/auth/register",
+                    "protocol": "http",
+                    "host": [
+                        "localhost"
+                    ],
+                    "port": "5000",
+                    "path": [
+                        "api",
+                        "auth",
+                        "register"
+                    ]
+                },
+                "description": "Register first user - Alice"
+            },
+            "response": []
+        },
+        {
+            "name": "3. Register User 2",
+            "event": [
+                {
+                    "listen": "test",
+                    "script": {
+                        "exec": [
+                            "if (pm.response.code === 201) {",
+                            "    var jsonData = pm.response.json();",
+                            "    pm.environment.set(\"user2_id\", jsonData.user.id);",
+                            "    pm.environment.set(\"user2_email\", jsonData.user.email);",
+                            "    console.log(\"User 2 ID saved: \" + jsonData.user.id);",
+                            "}"
+                        ],
+                        "type": "text/javascript"
+                    }
+                }
+            ],
+            "request": {
+                "method": "POST",
+                "header": [
+                    {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                    }
+                ],
+                "body": {
+                    "mode": "raw",
+                    "raw": "{\n  \"email\": \"bob@vit.edu\",\n  \"name\": \"Bob Singh\",\n  \"password\": \"Bob12345\"\n}"
+                },
+                "url": {
+                    "raw": "http://localhost:5000/api/auth/register",
+                    "protocol": "http",
+                    "host": [
+                        "localhost"
+                    ],
+                    "port": "5000",
+                    "path": [
+                        "api",
+                        "auth",
+                        "register"
+                    ]
+                },
+                "description": "Register second user - Bob"
+            },
+            "response": []
+        },
+        {
+            "name": "4. Register User 3",
+            "event": [
+                {
+                    "listen": "test",
+                    "script": {
+                        "exec": [
+                            "if (pm.response.code === 201) {",
+                            "    var jsonData = pm.response.json();",
+                            "    pm.environment.set(\"user3_id\", jsonData.user.id);",
+                            "    pm.environment.set(\"user3_email\", jsonData.user.email);",
+                            "    console.log(\"User 3 ID saved: \" + jsonData.user.id);",
+                            "}"
+                        ],
+                        "type": "text/javascript"
+                    }
+                }
+            ],
+            "request": {
+                "method": "POST",
+                "header": [
+                    {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                    }
+                ],
+                "body": {
+                    "mode": "raw",
+                    "raw": "{\n  \"email\": \"carol@vit.edu\",\n  \"name\": \"Carol Patel\",\n  \"password\": \"Carol123\"\n}"
+                },
+                "url": {
+                    "raw": "http://localhost:5000/api/auth/register",
+                    "protocol": "http",
+                    "host": [
+                        "localhost"
+                    ],
+                    "port": "5000",
+                    "path": [
+                        "api",
+                        "auth",
+                        "register"
+                    ]
+                },
+                "description": "Register third user - Carol"
+            },
+            "response": []
+        },
+        {
+            "name": "5. Login User 1 (Alice)",
+            "event": [
+                {
+                    "listen": "test",
+                    "script": {
+                        "exec": [
+                            "if (pm.response.code === 200) {",
+                            "    var jsonData = pm.response.json();",
+                            "    pm.environment.set(\"user1_token\", jsonData.token);",
+                            "    console.log(\"User 1 token saved\");",
+                            "}"
+                        ],
+                        "type": "text/javascript"
+                    }
+                }
+            ],
+            "request": {
+                "method": "POST",
+                "header": [
+                    {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                    }
+                ],
+                "body": {
+                    "mode": "raw",
+                    "raw": "{\n  \"email\": \"alice@vit.edu\",\n  \"password\": \"Alice123\"\n}"
+                },
+                "url": {
+                    "raw": "http://localhost:5000/api/auth/login",
+                    "protocol": "http",
+                    "host": [
+                        "localhost"
+                    ],
+                    "port": "5000",
+                    "path": [
+                        "api",
+                        "auth",
+                        "login"
+                    ]
+                },
+                "description": "Login as Alice and save JWT token"
+            },
+            "response": []
+        },
+        {
+            "name": "6. Create Group - Trip to Goa",
+            "event": [
+                {
+                    "listen": "test",
+                    "script": {
+                        "exec": [
+                            "if (pm.response.code === 201) {",
+                            "    var jsonData = pm.response.json();",
+                            "    pm.environment.set(\"group1_id\", jsonData.id);",
+                            "    console.log(\"Group 1 ID saved: \" + jsonData.id);",
+                            "}"
+                        ],
+                        "type": "text/javascript"
+                    }
+                }
+            ],
+            "request": {
+                "method": "POST",
+                "header": [
+                    {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                    },
+                    {
+                        "key": "Authorization",
+                        "value": "Bearer {{user1_token}}"
+                    }
+                ],
+                "body": {
+                    "mode": "raw",
+                    "raw": "{\n  \"name\": \"Trip to Goa\"\n}"
+                },
+                "url": {
+                    "raw": "http://localhost:5000/api/groups",
+                    "protocol": "http",
+                    "host": [
+                        "localhost"
+                    ],
+                    "port": "5000",
+                    "path": [
+                        "api",
+                        "groups"
+                    ]
+                },
+                "description": "Alice creates a group for Goa trip"
+            },
+            "response": []
+        },
+        {
+            "name": "7. Add Bob to Group",
+            "request": {
+                "method": "POST",
+                "header": [
+                    {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                    },
+                    {
+                        "key": "Authorization",
+                        "value": "Bearer {{user1_token}}"
+                    }
+                ],
+                "body": {
+                    "mode": "raw",
+                    "raw": "{\n  \"email\": \"bob@vit.edu\"\n}"
+                },
+                "url": {
+                    "raw": "http://localhost:5000/api/groups/{{group1_id}}/members",
+                    "protocol": "http",
+                    "host": [
+                        "localhost"
+                    ],
+                    "port": "5000",
+                    "path": [
+                        "api",
+                        "groups",
+                        "{{group1_id}}",
+                        "members"
+                    ]
+                },
+                "description": "Alice adds Bob to the Goa trip group"
+            },
+            "response": []
+        },
+        {
+            "name": "8. Add Carol to Group",
+            "request": {
+                "method": "POST",
+                "header": [
+                    {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                    },
+                    {
+                        "key": "Authorization",
+                        "value": "Bearer {{user1_token}}"
+                    }
+                ],
+                "body": {
+                    "mode": "raw",
+                    "raw": "{\n  \"email\": \"carol@vit.edu\"\n}"
+                },
+                "url": {
+                    "raw": "http://localhost:5000/api/groups/{{group1_id}}/members",
+                    "protocol": "http",
+                    "host": [
+                        "localhost"
+                    ],
+                    "port": "5000",
+                    "path": [
+                        "api",
+                        "groups",
+                        "{{group1_id}}",
+                        "members"
+                    ]
+                },
+                "description": "Alice adds Carol to the Goa trip group"
+            },
+            "response": []
+        },
+        {
+            "name": "9. Create Expense - Hotel Booking",
+            "event": [
+                {
+                    "listen": "test",
+                    "script": {
+                        "exec": [
+                            "if (pm.response.code === 201) {",
+                            "    var jsonData = pm.response.json();",
+                            "    pm.environment.set(\"expense1_id\", jsonData.id);",
+                            "    console.log(\"Expense 1 ID saved: \" + jsonData.id);",
+                            "}"
+                        ],
+                        "type": "text/javascript"
+                    }
+                }
+            ],
+            "request": {
+                "method": "POST",
+                "header": [
+                    {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                    },
+                    {
+                        "key": "Authorization",
+                        "value": "Bearer {{user1_token}}"
+                    }
+                ],
+                "body": {
+                    "mode": "raw",
+                    "raw": "{\n  \"description\": \"Hotel Booking - 3 Nights\",\n  \"amount\": 9000,\n  \"groupId\": \"{{group1_id}}\",\n  \"participantIds\": [\"{{user1_id}}\", \"{{user2_id}}\", \"{{user3_id}}\"]\n}"
+                },
+                "url": {
+                    "raw": "http://localhost:5000/api/expenses",
+                    "protocol": "http",
+                    "host": [
+                        "localhost"
+                    ],
+                    "port": "5000",
+                    "path": [
+                        "api",
+                        "expenses"
+                    ]
+                },
+                "description": "Alice pays for hotel - split among 3 people"
+            },
+            "response": []
+        },
+        {
+            "name": "10. Create Expense - Flight Tickets",
+            "request": {
+                "method": "POST",
+                "header": [
+                    {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                    },
+                    {
+                        "key": "Authorization",
+                        "value": "Bearer {{user1_token}}"
+                    }
+                ],
+                "body": {
+                    "mode": "raw",
+                    "raw": "{\n  \"description\": \"Flight Tickets\",\n  \"amount\": 15000,\n  \"groupId\": \"{{group1_id}}\",\n  \"participantIds\": [\"{{user1_id}}\", \"{{user2_id}}\", \"{{user3_id}}\"]\n}"
+                },
+                "url": {
+                    "raw": "http://localhost:5000/api/expenses",
+                    "protocol": "http",
+                    "host": [
+                        "localhost"
+                    ],
+                    "port": "5000",
+                    "path": [
+                        "api",
+                        "expenses"
+                    ]
+                },
+                "description": "Alice pays for flights - split among 3 people"
+            },
+            "response": []
+        },
+        {
+            "name": "11. Login User 2 (Bob)",
+            "event": [
+                {
+                    "listen": "test",
+                    "script": {
+                        "exec": [
+                            "if (pm.response.code === 200) {",
+                            "    var jsonData = pm.response.json();",
+                            "    pm.environment.set(\"user2_token\", jsonData.token);",
+                            "    console.log(\"User 2 token saved\");",
+                            "}"
+                        ],
+                        "type": "text/javascript"
+                    }
+                }
+            ],
+            "request": {
+                "method": "POST",
+                "header": [
+                    {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                    }
+                ],
+                "body": {
+                    "mode": "raw",
+                    "raw": "{\n  \"email\": \"bob@vit.edu\",\n  \"password\": \"Bob12345\"\n}"
+                },
+                "url": {
+                    "raw": "http://localhost:5000/api/auth/login",
+                    "protocol": "http",
+                    "host": [
+                        "localhost"
+                    ],
+                    "port": "5000",
+                    "path": [
+                        "api",
+                        "auth",
+                        "login"
+                    ]
+                },
+                "description": "Login as Bob"
+            },
+            "response": []
+        },
+        {
+            "name": "12. Bob Creates Expense - Dinner",
+            "request": {
+                "method": "POST",
+                "header": [
+                    {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                    },
+                    {
+                        "key": "Authorization",
+                        "value": "Bearer {{user2_token}}"
+                    }
+                ],
+                "body": {
+                    "mode": "raw",
+                    "raw": "{\n  \"description\": \"Dinner at Beach Shack\",\n  \"amount\": 2400,\n  \"groupId\": \"{{group1_id}}\",\n  \"participantIds\": [\"{{user1_id}}\", \"{{user2_id}}\", \"{{user3_id}}\"]\n}"
+                },
+                "url": {
+                    "raw": "http://localhost:5000/api/expenses",
+                    "protocol": "http",
+                    "host": [
+                        "localhost"
+                    ],
+                    "port": "5000",
+                    "path": [
+                        "api",
+                        "expenses"
+                    ]
+                },
+                "description": "Bob pays for dinner - split among 3 people"
+            },
+            "response": []
+        },
+        {
+            "name": "13. Bob Creates Expense - Water Sports",
+            "request": {
+                "method": "POST",
+                "header": [
+                    {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                    },
+                    {
+                        "key": "Authorization",
+                        "value": "Bearer {{user2_token}}"
+                    }
+                ],
+                "body": {
+                    "mode": "raw",
+                    "raw": "{\n  \"description\": \"Water Sports Activities\",\n  \"amount\": 3600,\n  \"groupId\": \"{{group1_id}}\",\n  \"participantIds\": [\"{{user1_id}}\", \"{{user2_id}}\"]\n}"
+                },
+                "url": {
+                    "raw": "http://localhost:5000/api/expenses",
+                    "protocol": "http",
+                    "host": [
+                        "localhost"
+                    ],
+                    "port": "5000",
+                    "path": [
+                        "api",
+                        "expenses"
+                    ]
+                },
+                "description": "Bob pays for water sports - only Alice and Bob participate"
+            },
+            "response": []
+        },
+        {
+            "name": "14. Get Group Details",
+            "request": {
+                "method": "GET",
+                "header": [
+                    {
+                        "key": "Authorization",
+                        "value": "Bearer {{user1_token}}"
+                    }
+                ],
+                "url": {
+                    "raw": "http://localhost:5000/api/groups/{{group1_id}}",
+                    "protocol": "http",
+                    "host": [
+                        "localhost"
+                    ],
+                    "port": "5000",
+                    "path": [
+                        "api",
+                        "groups",
+                        "{{group1_id}}"
+                    ]
+                },
+                "description": "Get complete group details with all members and expenses"
+            },
+            "response": []
+        },
+        {
+            "name": "15. Get Group Balances",
+            "request": {
+                "method": "GET",
+                "header": [
+                    {
+                        "key": "Authorization",
+                        "value": "Bearer {{user1_token}}"
+                    }
+                ],
+                "url": {
+                    "raw": "http://localhost:5000/api/settlements/balances/group/{{group1_id}}",
+                    "protocol": "http",
+                    "host": [
+                        "localhost"
+                    ],
+                    "port": "5000",
+                    "path": [
+                        "api",
+                        "settlements",
+                        "balances",
+                        "group",
+                        "{{group1_id}}"
+                    ]
+                },
+                "description": "Calculate who owes whom in the group"
+            },
+            "response": []
+        },
+        {
+            "name": "16. Bob Settles Payment to Alice",
+            "request": {
+                "method": "POST",
+                "header": [
+                    {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                    },
+                    {
+                        "key": "Authorization",
+                        "value": "Bearer {{user2_token}}"
+                    }
+                ],
+                "body": {
+                    "mode": "raw",
+                    "raw": "{\n  \"groupId\": \"{{group1_id}}\",\n  \"toUserId\": \"{{user1_id}}\",\n  \"amount\": 5000\n}"
+                },
+                "url": {
+                    "raw": "http://localhost:5000/api/settlements",
+                    "protocol": "http",
+                    "host": [
+                        "localhost"
+                    ],
+                    "port": "5000",
+                    "path": [
+                        "api",
+                        "settlements"
+                    ]
+                },
+                "description": "Bob pays Alice 5000 rupees"
+            },
+            "response": []
+        },
+        {
+            "name": "17. Get Updated Balances",
+            "request": {
+                "method": "GET",
+                "header": [
+                    {
+                        "key": "Authorization",
+                        "value": "Bearer {{user1_token}}"
+                    }
+                ],
+                "url": {
+                    "raw": "http://localhost:5000/api/settlements/balances/group/{{group1_id}}",
+                    "protocol": "http",
+                    "host": [
+                        "localhost"
+                    ],
+                    "port": "5000",
+                    "path": [
+                        "api",
+                        "settlements",
+                        "balances",
+                        "group",
+                        "{{group1_id}}"
+                    ]
+                },
+                "description": "Check updated balances after Bob's payment"
+            },
+            "response": []
+        },
+        {
+            "name": "18. Get User's Groups",
+            "request": {
+                "method": "GET",
+                "header": [
+                    {
+                        "key": "Authorization",
+                        "value": "Bearer {{user1_token}}"
+                    }
+                ],
+                "url": {
+                    "raw": "http://localhost:5000/api/groups/user",
+                    "protocol": "http",
+                    "host": [
+                        "localhost"
+                    ],
+                    "port": "5000",
+                    "path": [
+                        "api",
+                        "groups",
+                        "user"
+                    ]
+                },
+                "description": "Get all groups Alice is a member of"
+            },
+            "response": []
+        },
+        {
+            "name": "19. Get All Balances (All Groups)",
+            "request": {
+                "method": "GET",
+                "header": [
+                    {
+                        "key": "Authorization",
+                        "value": "Bearer {{user1_token}}"
+                    }
+                ],
+                "url": {
+                    "raw": "http://localhost:5000/api/settlements/balances",
+                    "protocol": "http",
+                    "host": [
+                        "localhost"
+                    ],
+                    "port": "5000",
+                    "path": [
+                        "api",
+                        "settlements",
+                        "balances"
+                    ]
+                },
+                "description": "Get balances across all groups for the user"
+            },
+            "response": []
+        },
+        {
+            "name": "20. Get Group Settlements History",
+            "request": {
+                "method": "GET",
+                "header": [
+                    {
+                        "key": "Authorization",
+                        "value": "Bearer {{user1_token}}"
+                    }
+                ],
+                "url": {
+                    "raw": "http://localhost:5000/api/settlements/group/{{group1_id}}",
+                    "protocol": "http",
+                    "host": [
+                        "localhost"
+                    ],
+                    "port": "5000",
+                    "path": [
+                        "api",
+                        "settlements",
+                        "group",
+                        "{{group1_id}}"
+                    ]
+                },
+                "description": "View all settlement transactions in the group"
+            },
+            "response": []
+        }
+    ],
+    "variable": [
+        {
+            "key": "base_url",
+            "value": "http://localhost:5000",
+            "type": "string"
+        }
+    ]
+}

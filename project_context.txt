@@ -1,0 +1,2695 @@
+--- START: ./structure.md ---
+backend/
+├── app.py                    # Flask application entry point
+├── config.py                 # Configuration management
+├── database.py               # Neo4j connection & init
+├── requirements.txt          # Python dependencies
+├── .env.example             # Environment template
+│
+├── models/                   # Data models
+│   ├── user.py              # User operations
+│   ├── group.py             # Group operations
+│   ├── expense.py           # Expense operations
+│   └── settlement.py        # Settlement operations
+│
+├── routes/                   # API routes
+│   ├── auth.py              # Authentication endpoints
+│   ├── groups.py            # Group endpoints
+│   ├── expenses.py          # Expense endpoints
+│   └── settlements.py       # Settlement endpoints
+│
+├── utils/                    # Utilities
+│   ├── auth.py              # JWT authentication
+│   └── calculations.py      # Balance calculations
+│
+├── Documentation/
+│   ├── README.md
+│   ├── ASSIGNMENT_DOCUMENTATION.md
+│   ├── FRONTEND_MIGRATION.md
+│   ├── QUICK_START_GUIDE.md
+│   └── ASSIGNMENT_CHECKLIST.md
+│
+└── Tools/
+    ├── test_connection.py        # Connection test
+    ├── demo_graph_capabilities.py # Feature demo
+    └── setup.sh                   # Setup script-e 
+--- END: ./structure.md ---
+
+--- START: ./FRONTEND_MIGRATION.md ---
+# Frontend Migration Guide
+
+## Overview
+This guide helps you connect your existing Next.js frontend to the Flask + Neo4j backend.
+
+## Quick Start
+
+### Option 1: Environment Variable (Recommended)
+
+1. Create `.env.local` in your Next.js root:
+```env
+NEXT_PUBLIC_API_URL=http://localhost:5000/api
+```
+
+2. Update your API calls to use this variable:
+```javascript
+// Before
+const res = await fetch('/api/expenses', { ... });
+
+// After
+const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/expenses`, { ... });
+```
+
+### Option 2: Next.js Rewrites (Alternative)
+
+Add to `next.config.mjs`:
+```javascript
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  async rewrites() {
+    return [
+      {
+        source: '/api/:path*',
+        destination: 'http://localhost:5000/api/:path*',
+      },
+    ];
+  },
+};
+
+export default nextConfig;
+```
+
+This allows you to keep your existing `/api/*` calls without changes!
+
+## Authentication Changes
+
+### 1. Update NextAuth to Custom JWT
+
+The Flask backend uses custom JWT tokens instead of NextAuth.
+
+**Update your API calls to include the token:**
+
+```javascript
+// Store token after login
+const handleLogin = async (email, password) => {
+  const res = await fetch(`${API_URL}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  
+  const data = await res.json();
+  if (res.ok) {
+    // Store token in localStorage or cookie
+    localStorage.setItem('token', data.token);
+    // Redirect to dashboard
+  }
+};
+
+// Include token in subsequent requests
+const createGroup = async (name) => {
+  const token = localStorage.getItem('token');
+  const res = await fetch(`${API_URL}/groups`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({ name }),
+  });
+  return res.json();
+};
+```
+
+### 2. Update Session Management
+
+Replace `getServerSession` with custom session check:
+
+```javascript
+// Before (with NextAuth)
+import { getServerSession } from "next-auth/next";
+const session = await getServerSession(authOptions);
+
+// After (with Flask JWT)
+const getSession = async () => {
+  const token = localStorage.getItem('token');
+  if (!token) return null;
+  
+  const res = await fetch(`${API_URL}/auth/session`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  
+  if (res.ok) {
+    return await res.json();
+  }
+  return null;
+};
+```
+
+### 3. Update AuthProvider
+
+Create a new auth context:
+
+```javascript
+// components/AuthContext.jsx
+'use client';
+import { createContext, useContext, useState, useEffect } from 'react';
+
+const AuthContext = createContext();
+
+export function AuthProvider({ children }) {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    checkAuth();
+  }, []);
+
+  const checkAuth = async () => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/session`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        setUser(data.user);
+      } else {
+        localStorage.removeItem('token');
+      }
+    } catch (error) {
+      console.error('Auth check failed:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const login = async (email, password) => {
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    
+    if (res.ok) {
+      const data = await res.json();
+      localStorage.setItem('token', data.token);
+      setUser(data.user);
+      return { success: true };
+    } else {
+      const data = await res.json();
+      return { success: false, error: data.error };
+    }
+  };
+
+  const logout = () => {
+    localStorage.removeItem('token');
+    setUser(null);
+  };
+
+  return (
+    <AuthContext.Provider value={{ user, login, logout, loading }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+export const useAuth = () => useContext(AuthContext);
+```
+
+## API Endpoint Mapping
+
+### Authentication
+```
+POST /api/auth/[...nextauth] → POST /api/auth/login
+POST /api/register           → POST /api/auth/register
+```
+
+### Groups
+```
+POST   /api/groups                    → POST   /api/groups
+GET    /api/groups/[groupId]          → GET    /api/groups/<groupId>
+DELETE /api/groups/[groupId]          → DELETE /api/groups/<groupId>
+POST   /api/groups/[groupId]/members  → POST   /api/groups/<groupId>/members
+```
+
+### Expenses
+```
+POST /api/expenses → POST /api/expenses
+```
+
+### Settlements
+```
+POST /api/settlements → POST /api/settlements
+```
+
+## Response Format Changes
+
+The Flask backend returns similar JSON structures, but with slight differences:
+
+### Before (Prisma)
+```json
+{
+  "id": "clx...",
+  "name": "Group Name",
+  "_count": { "members": 3 }
+}
+```
+
+### After (Neo4j)
+```json
+{
+  "id": "uuid...",
+  "name": "Group Name",
+  "_count": { "members": 3 }
+}
+```
+
+**Note:** IDs are now UUIDs instead of CUID, but functionality remains the same.
+
+## Testing Your Migration
+
+1. **Start both servers:**
+```bash
+# Terminal 1 - Backend
+cd backend
+python app.py
+
+# Terminal 2 - Frontend  
+cd ..
+npm run dev
+```
+
+2. **Test the flow:**
+- Register a new user
+- Login
+- Create a group
+- Add expenses
+- Check balances
+
+3. **Check browser console for any CORS or API errors**
+
+## Common Issues
+
+### CORS Errors
+Make sure Flask CORS is configured for your frontend URL:
+```python
+# In backend/app.py
+CORS(app, origins=["http://localhost:3000"])
+```
+
+### 401 Unauthorized
+Check that:
+- Token is being stored correctly
+- Authorization header format is: `Bearer <token>`
+- Token hasn't expired (24 hours by default)
+
+### Network Errors
+Verify:
+- Flask server is running on port 5000
+- No firewall blocking the connection
+- API URL is correct in .env.local
+
+## Need Help?
+
+If you encounter issues:
+1. Check the Flask server logs
+2. Check browser console for errors
+3. Use browser DevTools Network tab to inspect requests
+4. Verify .env files are configured correctly-e 
+--- END: ./FRONTEND_MIGRATION.md ---
+
+--- START: ./backend/setup.sh ---
+-e 
+--- END: ./backend/setup.sh ---
+
+--- START: ./backend/demo_graph_capabilities.py ---
+#!/usr/bin/env python3
+"""
+Demo script showcasing Neo4j's graph database capabilities
+Perfect for assignment demonstration!
+"""
+
+from database import driver
+from config import Config
+import time
+
+def print_section(title):
+    """Print a formatted section header"""
+    print("\n" + "=" * 70)
+    print(f"  {title}")
+    print("=" * 70)
+
+def demo_complex_relationships():
+    """Demonstrate complex relationship queries"""
+    print_section("1. COMPLEX RELATIONSHIP QUERIES")
+    
+    with driver.session(database=Config.NEO4J_DATABASE) as session:
+        print("\n📊 Query: Find all users who share groups with me")
+        print("Cypher:")
+        print("  MATCH (me:User {id: $myId})-[:MEMBER_OF]->(g:Group)")
+        print("        <-[:MEMBER_OF]-(others:User)")
+        print("  WHERE me <> others")
+        print("  RETURN DISTINCT others.name, count(g) as sharedGroups")
+        
+        result = session.run("""
+            MATCH (me:User)-[:MEMBER_OF]->(g:Group)<-[:MEMBER_OF]-(others:User)
+            WHERE me <> others
+            WITH others, count(DISTINCT g) as sharedGroups
+            RETURN others.name as name, sharedGroups
+            ORDER BY sharedGroups DESC
+            LIMIT 5
+        """)
+        
+        print("\n✅ Results:")
+        for record in result:
+            print(f"   • {record['name']}: {record['sharedGroups']} shared group(s)")
+
+def demo_graph_traversal():
+    """Demonstrate graph traversal capabilities"""
+    print_section("2. GRAPH TRAVERSAL - WHO OWES WHOM?")
+    
+    with driver.session(database=Config.NEO4J_DATABASE) as session:
+        print("\n📊 Query: Find all expense relationships (payer → participants)")
+        print("Cypher:")
+        print("  MATCH (payer:User)-[:PAID]->(e:Expense)<-[:PARTICIPANT_IN]-(participant:User)")
+        print("  WHERE payer <> participant")
+        print("  RETURN payer.name, participant.name, e.amount")
+        
+        result = session.run("""
+            MATCH (payer:User)-[:PAID]->(e:Expense)<-[:PARTICIPANT_IN]-(participant:User)
+            WHERE payer <> participant
+            WITH payer, participant, count(e) as expenseCount, sum(e.amount) as totalAmount
+            RETURN payer.name as payer, 
+                   participant.name as participant, 
+                   expenseCount,
+                   totalAmount
+            ORDER BY totalAmount DESC
+            LIMIT 10
+        """)
+        
+        print("\n✅ Results:")
+        for record in result:
+            print(f"   • {record['payer']} paid for {record['participant']}: "
+                  f"{record['expenseCount']} expense(s), ${record['totalAmount']:.2f}")
+
+def demo_pattern_matching():
+    """Demonstrate pattern matching"""
+    print_section("3. PATTERN MATCHING - EXPENSE CHAINS")
+    
+    with driver.session(database=Config.NEO4J_DATABASE) as session:
+        print("\n📊 Query: Find expense patterns in groups")
+        print("Cypher:")
+        print("  MATCH (u:User)-[:PAID]->(e:Expense)-[:BELONGS_TO]->(g:Group)")
+        print("  MATCH (e)<-[:PARTICIPANT_IN]-(participants:User)")
+        print("  RETURN g.name, count(e) as expenses, sum(e.amount) as total")
+        
+        result = session.run("""
+            MATCH (u:User)-[:PAID]->(e:Expense)-[:BELONGS_TO]->(g:Group)
+            MATCH (e)<-[:PARTICIPANT_IN]-(participants:User)
+            WITH g, count(DISTINCT e) as expenseCount, 
+                 sum(e.amount) as totalAmount,
+                 count(DISTINCT participants) as participantCount
+            RETURN g.name as groupName,
+                   expenseCount,
+                   totalAmount,
+                   participantCount
+            ORDER BY totalAmount DESC
+        """)
+        
+        print("\n✅ Results:")
+        for record in result:
+            print(f"   • {record['groupName']}: "
+                  f"{record['expenseCount']} expenses, "
+                  f"${record['totalAmount']:.2f} total, "
+                  f"{record['participantCount']} participants")
+
+def demo_aggregations():
+    """Demonstrate efficient aggregations"""
+    print_section("4. GRAPH AGGREGATIONS")
+    
+    with driver.session(database=Config.NEO4J_DATABASE) as session:
+        print("\n📊 Query: Calculate each user's total spending and debt")
+        print("Cypher:")
+        print("  MATCH (u:User)")
+        print("  OPTIONAL MATCH (u)-[:PAID]->(paidExpenses:Expense)")
+        print("  OPTIONAL MATCH (u)-[:PARTICIPANT_IN]->(sharedExpenses:Expense)")
+        print("  RETURN u.name, sum(paidExpenses.amount), count(sharedExpenses)")
+        
+        result = session.run("""
+            MATCH (u:User)
+            OPTIONAL MATCH (u)-[:PAID]->(paidExpenses:Expense)
+            OPTIONAL MATCH (u)-[:PARTICIPANT_IN]->(sharedExpenses:Expense)
+            WITH u,
+                 COALESCE(sum(DISTINCT paidExpenses.amount), 0) as totalPaid,
+                 count(DISTINCT sharedExpenses) as expenseCount
+            WHERE totalPaid > 0 OR expenseCount > 0
+            RETURN u.name as name,
+                   totalPaid,
+                   expenseCount
+            ORDER BY totalPaid DESC
+        """)
+        
+        print("\n✅ Results:")
+        for record in result:
+            print(f"   • {record['name']}: "
+                  f"Paid ${record['totalPaid']:.2f}, "
+                  f"Involved in {record['expenseCount']} expense(s)")
+
+def demo_path_finding():
+    """Demonstrate path finding capabilities"""
+    print_section("5. PATH FINDING - DEBT CHAINS")
+    
+    with driver.session(database=Config.NEO4J_DATABASE) as session:
+        print("\n📊 Query: Find indirect debt relationships")
+        print("Cypher:")
+        print("  MATCH path = (u1:User)-[:PAID|PARTICIPANT_IN*1..3]-(u2:User)")
+        print("  WHERE u1 <> u2")
+        print("  RETURN u1.name, u2.name, length(path)")
+        
+        result = session.run("""
+            MATCH (u1:User)-[:MEMBER_OF]->(g:Group)<-[:MEMBER_OF]-(u2:User)
+            WHERE u1 <> u2
+            WITH u1, u2, g
+            MATCH (u1)-[:PAID]->(e1:Expense)-[:BELONGS_TO]->(g)
+            MATCH (u2)-[:PAID]->(e2:Expense)-[:BELONGS_TO]->(g)
+            WHERE e1 <> e2
+            RETURN u1.name as user1,
+                   u2.name as user2,
+                   g.name as inGroup,
+                   count(DISTINCT e1) as user1Expenses,
+                   count(DISTINCT e2) as user2Expenses
+            LIMIT 10
+        """)
+        
+        print("\n✅ Results (users with mutual expenses):")
+        for record in result:
+            print(f"   • {record['user1']} ⟷ {record['user2']} in '{record['inGroup']}': "
+                  f"{record['user1Expenses']} + {record['user2Expenses']} expenses")
+
+def demo_statistics():
+    """Show database statistics"""
+    print_section("6. DATABASE STATISTICS")
+    
+    with driver.session(database=Config.NEO4J_DATABASE) as session:
+        # Count nodes
+        result = session.run("""
+            MATCH (n)
+            RETURN labels(n)[0] as nodeType, count(n) as count
+            ORDER BY count DESC
+        """)
+        
+        print("\n📊 Node Counts:")
+        for record in result:
+            if record['nodeType']:
+                print(f"   • {record['nodeType']}: {record['count']}")
+        
+        # Count relationships
+        result = session.run("""
+            MATCH ()-[r]->()
+            RETURN type(r) as relType, count(r) as count
+            ORDER BY count DESC
+        """)
+        
+        print("\n📊 Relationship Counts:")
+        for record in result:
+            print(f"   • {record['relType']}: {record['count']}")
+
+def demo_performance():
+    """Demonstrate query performance"""
+    print_section("7. QUERY PERFORMANCE")
+    
+    with driver.session(database=Config.NEO4J_DATABASE) as session:
+        print("\n⚡ Testing query performance...")
+        
+        queries = [
+            ("Find user by email (indexed)", """
+                MATCH (u:User {email: 'test@example.com'})
+                RETURN u
+            """),
+            ("Count group members", """
+                MATCH (g:Group)<-[:MEMBER_OF]-(members:User)
+                RETURN g.name, count(members) as memberCount
+            """),
+            ("Calculate group balances", """
+                MATCH (g:Group)<-[:BELONGS_TO]-(e:Expense)
+                MATCH (e)<-[:PAID]-(payer:User)
+                MATCH (e)<-[:PARTICIPANT_IN]-(participant:User)
+                WITH g, payer, participant, sum(e.amount) as total
+                RETURN g.name, count(*) as transactions
+                LIMIT 1
+            """)
+        ]
+        
+        for name, query in queries:
+            start = time.time()
+            result = session.run(query)
+            result.consume()  # Force execution
+            duration = (time.time() - start) * 1000
+            print(f"   • {name}: {duration:.2f}ms")
+
+def main():
+    """Run all demonstrations"""
+    print("\n" + "🎓" * 35)
+    print("  Neo4j Graph Database Capabilities Demo")
+    print("  Expense Splitter Application")
+    print("🎓" * 35)
+    
+    try:
+        # Verify connection
+        driver.verify_connectivity()
+        print("\n✅ Connected to Neo4j!")
+        
+        # Check if we have data
+        with driver.session(database=Config.NEO4J_DATABASE) as session:
+            result = session.run("MATCH (n) RETURN count(n) as nodeCount")
+            node_count = result.single()['nodeCount']
+            
+            if node_count == 0:
+                print("\n⚠️  Warning: Database is empty!")
+                print("   Please use the application to create some data first:")
+                print("   1. Register users")
+                print("   2. Create groups")
+                print("   3. Add expenses")
+                print("\n   Then run this demo again to see the graph capabilities!")
+                return
+            
+            print(f"   Found {node_count} nodes in database")
+        
+        # Run demonstrations
+        demo_statistics()
+        demo_complex_relationships()
+        demo_graph_traversal()
+        demo_pattern_matching()
+        demo_aggregations()
+        demo_path_finding()
+        demo_performance()
+        
+        print_section("✅ DEMO COMPLETE")
+        print("\nKey Neo4j Benefits Demonstrated:")
+        print("  1. ✓ Natural relationship modeling")
+        print("  2. ✓ Complex graph traversals")
+        print("  3. ✓ Pattern matching queries")
+        print("  4. ✓ Efficient aggregations")
+        print("  5. ✓ Path finding capabilities")
+        print("  6. ✓ High performance on connected data")
+        
+        print("\nPerfect for Assignment Requirements:")
+        print("  ✓ Database Setup and Configuration")
+        print("  ✓ Data Model Design (Graph)")
+        print("  ✓ CRUD Operations Implementation")
+        print("  ✓ NoSQL Feature Demonstration")
+        
+    except Exception as e:
+        print(f"\n❌ Error: {e}")
+        print("\nMake sure:")
+        print("  1. Neo4j is running")
+        print("  2. .env file is configured")
+        print("  3. You have data in the database")
+    finally:
+        driver.close()
+
+if __name__ == '__main__':
+    main()-e 
+--- END: ./backend/demo_graph_capabilities.py ---
+
+--- START: ./backend/config.py ---
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+class Config:
+    # Flask configuration
+    SECRET_KEY = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
+    
+    # Neo4j configuration
+    NEO4J_URI = os.getenv('NEO4J_URI')
+    NEO4J_USERNAME = os.getenv('NEO4J_USERNAME', 'neo4j')
+    NEO4J_PASSWORD = os.getenv('NEO4J_PASSWORD')
+    NEO4J_DATABASE = os.getenv('NEO4J_DATABASE', 'neo4j')
+    
+    # JWT configuration
+    JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', SECRET_KEY)
+    JWT_ALGORITHM = 'HS256'
+    JWT_EXPIRATION_HOURS = 24
+    
+    # Validation
+    @staticmethod
+    def validate():
+        required = ['NEO4J_URI', 'NEO4J_PASSWORD']
+        missing = [key for key in required if not os.getenv(key)]
+        if missing:
+            raise ValueError(f"Missing required environment variables: {', '.join(missing)}")
+-e 
+--- END: ./backend/config.py ---
+
+--- START: ./backend/requirements.txt ---
+Flask==3.0.0
+flask-cors==4.0.0
+neo4j==5.14.1
+python-dotenv==1.0.0
+bcrypt==4.1.1
+PyJWT==2.8.0
+Werkzeug==3.0.1-e 
+--- END: ./backend/requirements.txt ---
+
+--- START: ./backend/database.py ---
+from neo4j import GraphDatabase
+from flask import g
+from config import Config
+
+# Validate configuration on import
+Config.validate()
+
+# Create the driver (singleton)
+driver = GraphDatabase.driver(
+    Config.NEO4J_URI,
+    auth=(Config.NEO4J_USERNAME, Config.NEO4J_PASSWORD),
+    max_connection_lifetime=3600,
+    max_connection_pool_size=50,
+    connection_acquisition_timeout=120
+)
+
+def get_db():
+    """Get database session from Flask's g object or create new one"""
+    if 'db' not in g:
+        g.db = driver.session(database=Config.NEO4J_DATABASE)
+    return g.db
+
+def close_db(e=None):
+    """Close database session"""
+    db = g.pop('db', None)
+    if db is not None:
+        db.close()
+
+def init_db():
+    """Initialize database with constraints and indexes"""
+    with driver.session(database=Config.NEO4J_DATABASE) as session:
+        # Create uniqueness constraints (automatically creates indexes)
+        constraints = [
+            "CREATE CONSTRAINT user_id_unique IF NOT EXISTS FOR (u:User) REQUIRE u.id IS UNIQUE",
+            "CREATE CONSTRAINT user_email_unique IF NOT EXISTS FOR (u:User) REQUIRE u.email IS UNIQUE",
+            "CREATE CONSTRAINT group_id_unique IF NOT EXISTS FOR (g:Group) REQUIRE g.id IS UNIQUE",
+            "CREATE CONSTRAINT expense_id_unique IF NOT EXISTS FOR (e:Expense) REQUIRE e.id IS UNIQUE",
+            "CREATE CONSTRAINT settlement_id_unique IF NOT EXISTS FOR (s:Settlement) REQUIRE s.id IS UNIQUE",
+        ]
+        
+        for constraint in constraints:
+            try:
+                session.run(constraint)
+                print(f"✓ Created: {constraint.split('FOR')[1].split('REQUIRE')[0].strip()}")
+            except Exception as e:
+                if "EquivalentSchemaRuleAlreadyExists" not in str(e):
+                    print(f"✗ Error creating constraint: {e}")
+        
+        # Create additional indexes for performance
+        indexes = [
+            "CREATE INDEX user_name_idx IF NOT EXISTS FOR (u:User) ON (u.name)",
+            "CREATE INDEX expense_created_idx IF NOT EXISTS FOR (e:Expense) ON (e.createdAt)",
+            "CREATE INDEX settlement_paid_idx IF NOT EXISTS FOR (s:Settlement) ON (s.paidAt)",
+        ]
+        
+        for index in indexes:
+            try:
+                session.run(index)
+                print(f"✓ Created: {index.split('FOR')[1].split('ON')[0].strip()}")
+            except Exception as e:
+                if "EquivalentSchemaRuleAlreadyExists" not in str(e):
+                    print(f"✗ Error creating index: {e}")
+        
+        print("\n✅ Database initialization complete!")
+
+def close_driver():
+    """Close the driver connection (called on application shutdown)"""
+    driver.close()
+-e 
+--- END: ./backend/database.py ---
+
+--- START: ./backend/test_connection.py ---
+#!/usr/bin/env python3
+"""
+Test script to verify Neo4j connection and basic operations
+Run this after setting up your .env file
+"""
+
+import sys
+from database import driver, init_db
+from config import Config
+
+def test_connection():
+    """Test Neo4j connection"""
+    print("🔍 Testing Neo4j connection...")
+    try:
+        # Verify the driver can connect
+        driver.verify_connectivity()
+        print("✅ Successfully connected to Neo4j!")
+        return True
+    except Exception as e:
+        print(f"❌ Connection failed: {e}")
+        print("\nTroubleshooting tips:")
+        print("1. Check your .env file has correct credentials")
+        print("2. Verify NEO4J_URI format: neo4j+s://xxxxx.databases.neo4j.io")
+        print("3. Ensure your IP is whitelisted in Neo4j Aura")
+        return False
+
+def test_constraints():
+    """Test database constraints"""
+    print("\n🔍 Testing database constraints...")
+    try:
+        init_db()
+        print("✅ Database constraints and indexes created successfully!")
+        return True
+    except Exception as e:
+        print(f"❌ Failed to create constraints: {e}")
+        return False
+
+def test_basic_operations():
+    """Test basic CRUD operations"""
+    print("\n🔍 Testing basic CRUD operations...")
+    try:
+        with driver.session(database=Config.NEO4J_DATABASE) as session:
+            # Create a test user
+            result = session.run("""
+                CREATE (u:TestUser {id: 'test-123', name: 'Test User'})
+                RETURN u
+            """)
+            record = result.single()
+            if record:
+                print("✅ Create operation successful")
+            
+            # Read the test user
+            result = session.run("""
+                MATCH (u:TestUser {id: 'test-123'})
+                RETURN u
+            """)
+            record = result.single()
+            if record:
+                print("✅ Read operation successful")
+            
+            # Update the test user
+            result = session.run("""
+                MATCH (u:TestUser {id: 'test-123'})
+                SET u.name = 'Updated Test User'
+                RETURN u
+            """)
+            record = result.single()
+            if record:
+                print("✅ Update operation successful")
+            
+            # Delete the test user
+            result = session.run("""
+                MATCH (u:TestUser {id: 'test-123'})
+                DELETE u
+                RETURN count(u) as deleted
+            """)
+            record = result.single()
+            if record and record['deleted'] > 0:
+                print("✅ Delete operation successful")
+            
+            return True
+    except Exception as e:
+        print(f"❌ CRUD operations failed: {e}")
+        return False
+
+def test_graph_queries():
+    """Test graph-specific queries"""
+    print("\n🔍 Testing graph queries...")
+    try:
+        with driver.session(database=Config.NEO4J_DATABASE) as session:
+            # Create test data
+            session.run("""
+                CREATE (u1:TestUser {id: '1', name: 'Alice'})
+                CREATE (u2:TestUser {id: '2', name: 'Bob'})
+                CREATE (g:TestGroup {id: 'g1', name: 'Test Group'})
+                CREATE (u1)-[:TEST_MEMBER_OF]->(g)
+                CREATE (u2)-[:TEST_MEMBER_OF]->(g)
+            """)
+            print("✅ Test graph structure created")
+            
+            # Test relationship query
+            result = session.run("""
+                MATCH (u:TestUser)-[:TEST_MEMBER_OF]->(g:TestGroup)
+                RETURN count(u) as memberCount
+            """)
+            record = result.single()
+            if record and record['memberCount'] == 2:
+                print("✅ Relationship query successful")
+            
+            # Test pattern matching
+            result = session.run("""
+                MATCH (u1:TestUser {id: '1'})-[:TEST_MEMBER_OF]->(g:TestGroup)
+                      <-[:TEST_MEMBER_OF]-(u2:TestUser)
+                WHERE u1 <> u2
+                RETURN u2.name as coMember
+            """)
+            record = result.single()
+            if record and record['coMember'] == 'Bob':
+                print("✅ Pattern matching successful")
+            
+            # Cleanup
+            session.run("""
+                MATCH (n:TestUser) DETACH DELETE n
+            """)
+            session.run("""
+                MATCH (n:TestGroup) DETACH DELETE n
+            """)
+            print("✅ Test data cleaned up")
+            
+            return True
+    except Exception as e:
+        print(f"❌ Graph queries failed: {e}")
+        return False
+
+def main():
+    """Run all tests"""
+    print("=" * 60)
+    print("Neo4j Expense Splitter - Database Test Suite")
+    print("=" * 60)
+    
+    # Test configuration
+    try:
+        Config.validate()
+        print("✅ Configuration validated")
+    except ValueError as e:
+        print(f"❌ Configuration error: {e}")
+        print("\nPlease create a .env file with your Neo4j credentials")
+        sys.exit(1)
+    
+    # Run tests
+    all_passed = True
+    all_passed &= test_connection()
+    
+    if all_passed:
+        all_passed &= test_constraints()
+        all_passed &= test_basic_operations()
+        all_passed &= test_graph_queries()
+    
+    print("\n" + "=" * 60)
+    if all_passed:
+        print("✅ All tests passed! Your Neo4j setup is ready.")
+        print("\nYou can now run: python app.py")
+    else:
+        print("❌ Some tests failed. Please check the errors above.")
+    print("=" * 60)
+    
+    # Close driver
+    driver.close()
+    sys.exit(0 if all_passed else 1)
+
+if __name__ == '__main__':
+    main()-e 
+--- END: ./backend/test_connection.py ---
+
+--- START: ./backend/utils/auth.py ---
+import jwt
+import bcrypt
+from datetime import datetime, timedelta
+from functools import wraps
+from flask import request, jsonify
+from config import Config
+
+def hash_password(password):
+    """Hash a password using bcrypt"""
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+def verify_password(password, hashed_password):
+    """Verify a password against its hash"""
+    return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
+
+def generate_token(user_id):
+    """Generate JWT token for user"""
+    payload = {
+        'user_id': user_id,
+        'exp': datetime.utcnow() + timedelta(hours=Config.JWT_EXPIRATION_HOURS),
+        'iat': datetime.utcnow()
+    }
+    return jwt.encode(payload, Config.JWT_SECRET_KEY, algorithm=Config.JWT_ALGORITHM)
+
+def decode_token(token):
+    """Decode JWT token and return user_id"""
+    try:
+        payload = jwt.decode(token, Config.JWT_SECRET_KEY, algorithms=[Config.JWT_ALGORITHM])
+        return payload['user_id']
+    except jwt.ExpiredSignatureError:
+        return None
+    except jwt.InvalidTokenError:
+        return None
+
+def require_auth(f):
+    """Decorator to require authentication for routes"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        auth_header = request.headers.get('Authorization')
+        
+        if not auth_header:
+            return jsonify({"error": "Unauthorized - No token provided"}), 401
+        
+        parts = auth_header.split()
+        if len(parts) != 2 or parts[0].lower() != 'bearer':
+            return jsonify({"error": "Unauthorized - Invalid token format"}), 401
+        
+        token = parts[1]
+        user_id = decode_token(token)
+        
+        if not user_id:
+            return jsonify({"error": "Unauthorized - Invalid or expired token"}), 401
+        
+        kwargs['current_user_id'] = user_id
+        return f(*args, **kwargs)
+    
+    return decorated_function
+
+def get_current_user():
+    """Get current user ID from request token"""
+    auth_header = request.headers.get('Authorization')
+    if not auth_header:
+        return None
+    
+    parts = auth_header.split()
+    if len(parts) != 2 or parts[0].lower() != 'bearer':
+        return None
+    
+    return decode_token(parts[1])
+-e 
+--- END: ./backend/utils/auth.py ---
+
+--- START: ./backend/utils/calculations.py ---
+def calculate_balances(expenses, members, settlements=None):
+    """
+    Calculate balances for all members based on expenses and settlements
+    
+    Args:
+        expenses: List of expense dicts with amount, paidById, and participants
+        members: List of member dicts with id
+        settlements: List of settlement dicts (optional)
+    
+    Returns:
+        dict: userId -> balance mapping
+    """
+    if settlements is None:
+        settlements = []
+    
+    balances = {}
+    for member in members:
+        balances[member['id']] = 0.0
+    
+    # Step 1: Calculate initial balances based on expenses
+    for expense in expenses:
+        payer_id = expense.get('paidById')
+        amount = float(expense.get('amount', 0))
+        participants = expense.get('participants', [])
+        num_participants = len(participants)
+        
+        if num_participants == 0:
+            continue
+        
+        # Credit the person who paid the full amount
+        if payer_id in balances:
+            balances[payer_id] += amount
+        
+        # Debit each participant for their share
+        share = amount / num_participants
+        for participant in participants:
+            participant_id = participant['id']
+            if participant_id in balances:
+                balances[participant_id] -= share
+    
+    # Step 2: Apply all settlement transactions to the balances
+    for settlement in settlements:
+        from_user_id = settlement.get('fromUserId')
+        to_user_id = settlement.get('toUserId')
+        amount = float(settlement.get('amount', 0))
+        
+        # The person who paid (the debtor) moves closer to zero (balance increases)
+        if from_user_id in balances:
+            balances[from_user_id] += amount
+        
+        # The person who received money (the creditor) moves closer to zero (balance decreases)
+        if to_user_id in balances:
+            balances[to_user_id] -= amount
+    
+    return balances
+
+
+def settle_debts(balances):
+    """
+    Generate simplified payment suggestions to settle all debts
+    
+    Args:
+        balances: dict of userId -> balance
+    
+    Returns:
+        list: Array of payment dicts with {from, to, amount}
+    """
+    # Convert to list and filter out trivial amounts
+    sorted_balances = [
+        {'userId': user_id, 'balance': balance}
+        for user_id, balance in balances.items()
+        if abs(balance) > 0.01
+    ]
+    
+    # Separate debtors (negative) and creditors (positive)
+    debtors = sorted([b for b in sorted_balances if b['balance'] < 0], 
+                     key=lambda x: x['balance'])
+    creditors = sorted([b for b in sorted_balances if b['balance'] > 0], 
+                       key=lambda x: x['balance'], reverse=True)
+    
+    payments = []
+    debtor_idx = 0
+    creditor_idx = 0
+    
+    while debtor_idx < len(debtors) and creditor_idx < len(creditors):
+        debtor = debtors[debtor_idx]
+        creditor = creditors[creditor_idx]
+        
+        amount_to_settle = min(-debtor['balance'], creditor['balance'])
+        
+        payments.append({
+            'from': debtor['userId'],
+            'to': creditor['userId'],
+            'amount': amount_to_settle
+        })
+        
+        debtor['balance'] += amount_to_settle
+        creditor['balance'] -= amount_to_settle
+        
+        if abs(debtor['balance']) < 0.01:
+            debtor_idx += 1
+        if abs(creditor['balance']) < 0.01:
+            creditor_idx += 1
+    
+    return payments-e 
+--- END: ./backend/utils/calculations.py ---
+
+--- START: ./backend/models/user.py ---
+import uuid
+from database import get_db
+
+class User:
+    @staticmethod
+    def create(email, name, hashed_password):
+        """Create a new user node in Neo4j"""
+        db = get_db()
+        user_id = str(uuid.uuid4())
+        
+        query = """
+        CREATE (u:User {
+            id: $id,
+            email: $email,
+            name: $name,
+            hashedPassword: $hashedPassword,
+            createdAt: datetime()
+        })
+        RETURN u
+        """
+        
+        result = db.run(query, 
+                       id=user_id, 
+                       email=email, 
+                       name=name, 
+                       hashedPassword=hashed_password)
+        
+        record = result.single()
+        if record:
+            user_node = record['u']
+            return {
+                'id': user_node['id'],
+                'email': user_node['email'],
+                'name': user_node['name']
+            }
+        return None
+    
+    @staticmethod
+    def find_by_email(email):
+        """Find user by email"""
+        db = get_db()
+        
+        query = """
+        MATCH (u:User {email: $email})
+        RETURN u
+        """
+        
+        result = db.run(query, email=email)
+        record = result.single()
+        
+        if record:
+            user_node = record['u']
+            return {
+                'id': user_node['id'],
+                'email': user_node['email'],
+                'name': user_node['name'],
+                'hashedPassword': user_node.get('hashedPassword')
+            }
+        return None
+    
+    @staticmethod
+    def find_by_id(user_id):
+        """Find user by ID"""
+        db = get_db()
+        
+        query = """
+        MATCH (u:User {id: $id})
+        RETURN u
+        """
+        
+        result = db.run(query, id=user_id)
+        record = result.single()
+        
+        if record:
+            user_node = record['u']
+            return {
+                'id': user_node['id'],
+                'email': user_node['email'],
+                'name': user_node['name']
+            }
+        return None
+    
+    @staticmethod
+    def exists_by_email(email):
+        """Check if user exists by email"""
+        db = get_db()
+        
+        query = """
+        MATCH (u:User {email: $email})
+        RETURN count(u) > 0 as exists
+        """
+        
+        result = db.run(query, email=email)
+        record = result.single()
+        return record['exists'] if record else False
+    
+    @staticmethod
+    def get_all():
+        """Get all users"""
+        db = get_db()
+        
+        query = """
+        MATCH (u:User)
+        RETURN u
+        ORDER BY u.name
+        """
+        
+        result = db.run(query)
+        users = []
+        
+        for record in result:
+            user_node = record['u']
+            users.append({
+                'id': user_node['id'],
+                'email': user_node['email'],
+                'name': user_node['name']
+            })
+        
+        return users
+    
+    @staticmethod
+    def get_groups(user_id):
+        """Get all groups a user is a member of"""
+        db = get_db()
+        
+        query = """
+        MATCH (u:User {id: $userId})-[:MEMBER_OF]->(g:Group)
+        OPTIONAL MATCH (g)<-[:MEMBER_OF]-(member:User)
+        WITH g, count(DISTINCT member) as memberCount
+        RETURN g, memberCount
+        ORDER BY g.name
+        """
+        
+        result = db.run(query, userId=user_id)
+        groups = []
+        
+        for record in result:
+            group_node = record['g']
+            groups.append({
+                'id': group_node['id'],
+                'name': group_node['name'],
+                '_count': {
+                    'members': record['memberCount']
+                }
+            })
+        
+        return groups
+-e 
+--- END: ./backend/models/user.py ---
+
+--- START: ./backend/models/expense.py ---
+import uuid
+from database import get_db
+from datetime import datetime
+
+class Expense:
+    @staticmethod
+    def create(description, amount, group_id, paid_by_id, participant_ids):
+        """Create a new expense in a group"""
+        db = get_db()
+        expense_id = str(uuid.uuid4())
+        
+        query = """
+        // Verify payer is a member of the group
+        MATCH (payer:User {id: $paidById})-[:MEMBER_OF]->(g:Group {id: $groupId})
+        
+        // Create the expense
+        CREATE (e:Expense {
+            id: $expenseId,
+            description: $description,
+            amount: $amount,
+            createdAt: datetime()
+        })
+        
+        // Link expense to group and payer
+        CREATE (e)-[:BELONGS_TO]->(g)
+        CREATE (payer)-[:PAID]->(e)
+        
+        // Link all participants
+        WITH e, g
+        UNWIND $participantIds as participantId
+        MATCH (participant:User {id: participantId})-[:MEMBER_OF]->(g)
+        CREATE (participant)-[:PARTICIPANT_IN]->(e)
+        
+        RETURN e
+        """
+        
+        result = db.run(query,
+                       expenseId=expense_id,
+                       description=description,
+                       amount=float(amount),
+                       groupId=group_id,
+                       paidById=paid_by_id,
+                       participantIds=participant_ids)
+        
+        record = result.single()
+        if record:
+            expense_node = record['e']
+            return {
+                'id': expense_node['id'],
+                'description': expense_node['description'],
+                'amount': expense_node['amount'],
+                'createdAt': expense_node['createdAt'].isoformat() if hasattr(expense_node['createdAt'], 'isoformat') else str(expense_node['createdAt'])
+            }
+        return None
+    
+    @staticmethod
+    def find_by_id(expense_id):
+        """Find expense by ID with all details"""
+        db = get_db()
+        
+        query = """
+        MATCH (e:Expense {id: $expenseId})
+        OPTIONAL MATCH (e)<-[:PAID]-(paidBy:User)
+        OPTIONAL MATCH (e)<-[:PARTICIPANT_IN]-(participant:User)
+        OPTIONAL MATCH (e)-[:BELONGS_TO]->(g:Group)
+        
+        RETURN e, paidBy, collect(DISTINCT participant) as participants, g
+        """
+        
+        result = db.run(query, expenseId=expense_id)
+        record = result.single()
+        
+        if not record:
+            return None
+        
+        expense_node = record['e']
+        paidBy = record['paidBy']
+        participants = [p for p in record['participants'] if p is not None]
+        group = record['g']
+        
+        return {
+            'id': expense_node['id'],
+            'description': expense_node['description'],
+            'amount': expense_node['amount'],
+            'createdAt': expense_node['createdAt'].isoformat() if hasattr(expense_node['createdAt'], 'isoformat') else str(expense_node['createdAt']),
+            'paidById': paidBy['id'] if paidBy else None,
+            'paidBy': {
+                'id': paidBy['id'],
+                'name': paidBy['name'],
+                'email': paidBy['email']
+            } if paidBy else None,
+            'participants': [{
+                'id': p['id'],
+                'name': p['name'],
+                'email': p['email']
+            } for p in participants],
+            'groupId': group['id'] if group else None
+        }
+    
+    @staticmethod
+    def get_all_for_group(group_id):
+        """Get all expenses for a group"""
+        db = get_db()
+        
+        query = """
+        MATCH (g:Group {id: $groupId})<-[:BELONGS_TO]-(e:Expense)
+        OPTIONAL MATCH (e)<-[:PAID]-(paidBy:User)
+        OPTIONAL MATCH (e)<-[:PARTICIPANT_IN]-(participant:User)
+        
+        WITH e, paidBy, collect(DISTINCT participant) as participants
+        RETURN e, paidBy, participants
+        ORDER BY e.createdAt DESC
+        """
+        
+        result = db.run(query, groupId=group_id)
+        expenses = []
+        
+        for record in result:
+            expense_node = record['e']
+            paidBy = record['paidBy']
+            participants = [p for p in record['participants'] if p is not None]
+            
+            expenses.append({
+                'id': expense_node['id'],
+                'description': expense_node['description'],
+                'amount': expense_node['amount'],
+                'createdAt': expense_node['createdAt'].isoformat() if hasattr(expense_node['createdAt'], 'isoformat') else str(expense_node['createdAt']),
+                'paidById': paidBy['id'] if paidBy else None,
+                'paidBy': {
+                    'id': paidBy['id'],
+                    'name': paidBy['name'],
+                    'email': paidBy['email']
+                } if paidBy else None,
+                'participants': [{
+                    'id': p['id'],
+                    'name': p['name'],
+                    'email': p['email']
+                } for p in participants]
+            })
+        
+        return expenses
+    
+    @staticmethod
+    def delete(expense_id, user_id):
+        """Delete an expense (only if user is member of the group)"""
+        db = get_db()
+        
+        query = """
+        MATCH (u:User {id: $userId})-[:MEMBER_OF]->(g:Group)<-[:BELONGS_TO]-(e:Expense {id: $expenseId})
+        DETACH DELETE e
+        RETURN count(e) as deleted
+        """
+        
+        result = db.run(query, expenseId=expense_id, userId=user_id)
+        record = result.single()
+        return record['deleted'] > 0 if record else False
+    
+    @staticmethod
+    def get_user_expenses(user_id):
+        """Get all expenses a user is involved in (paid or participated)"""
+        db = get_db()
+        
+        query = """
+        MATCH (u:User {id: $userId})
+        MATCH (e:Expense)
+        WHERE (u)-[:PAID]->(e) OR (u)-[:PARTICIPANT_IN]->(e)
+        
+        OPTIONAL MATCH (e)<-[:PAID]-(paidBy:User)
+        OPTIONAL MATCH (e)<-[:PARTICIPANT_IN]-(participant:User)
+        OPTIONAL MATCH (e)-[:BELONGS_TO]->(g:Group)
+        
+        WITH e, paidBy, collect(DISTINCT participant) as participants, g
+        RETURN e, paidBy, participants, g
+        ORDER BY e.createdAt DESC
+        """
+        
+        result = db.run(query, userId=user_id)
+        expenses = []
+        
+        for record in result:
+            expense_node = record['e']
+            paidBy = record['paidBy']
+            participants = [p for p in record['participants'] if p is not None]
+            group = record['g']
+            
+            expenses.append({
+                'id': expense_node['id'],
+                'description': expense_node['description'],
+                'amount': expense_node['amount'],
+                'createdAt': expense_node['createdAt'].isoformat() if hasattr(expense_node['createdAt'], 'isoformat') else str(expense_node['createdAt']),
+                'paidById': paidBy['id'] if paidBy else None,
+                'paidBy': {
+                    'id': paidBy['id'],
+                    'name': paidBy['name']
+                } if paidBy else None,
+                'participants': [{
+                    'id': p['id'],
+                    'name': p['name']
+                } for p in participants],
+                'group': {
+                    'id': group['id'],
+                    'name': group['name']
+                } if group else None
+            })
+        
+        return expenses-e 
+--- END: ./backend/models/expense.py ---
+
+--- START: ./backend/models/settlement.py ---
+import uuid
+from database import get_db
+from datetime import datetime
+
+class Settlement:
+    @staticmethod
+    def create(group_id, from_user_id, to_user_id, amount):
+        """Record a settlement payment between two users in a group"""
+        db = get_db()
+        settlement_id = str(uuid.uuid4())
+        
+        query = """
+        // Verify both users are members of the group
+        MATCH (fromUser:User {id: $fromUserId})-[:MEMBER_OF]->(g:Group {id: $groupId})
+        MATCH (toUser:User {id: $toUserId})-[:MEMBER_OF]->(g)
+        
+        // Create settlement node
+        CREATE (s:Settlement {
+            id: $settlementId,
+            amount: $amount,
+            paidAt: datetime()
+        })
+        
+        // Link settlement to group and users
+        CREATE (s)-[:IN_GROUP]->(g)
+        CREATE (s)-[:FROM]->(fromUser)
+        CREATE (s)-[:TO]->(toUser)
+        
+        RETURN s
+        """
+        
+        result = db.run(query,
+                       settlementId=settlement_id,
+                       groupId=group_id,
+                       fromUserId=from_user_id,
+                       toUserId=to_user_id,
+                       amount=float(amount))
+        
+        record = result.single()
+        if record:
+            settlement_node = record['s']
+            return {
+                'id': settlement_node['id'],
+                'amount': settlement_node['amount'],
+                'paidAt': settlement_node['paidAt'].isoformat() if hasattr(settlement_node['paidAt'], 'isoformat') else str(settlement_node['paidAt']),
+                'groupId': group_id,
+                'fromUserId': from_user_id,
+                'toUserId': to_user_id
+            }
+        return None
+    
+    @staticmethod
+    def get_for_group(group_id):
+        """Get all settlements for a group"""
+        db = get_db()
+        
+        query = """
+        MATCH (s:Settlement)-[:IN_GROUP]->(g:Group {id: $groupId})
+        MATCH (s)-[:FROM]->(fromUser:User)
+        MATCH (s)-[:TO]->(toUser:User)
+        
+        RETURN s, fromUser, toUser
+        ORDER BY s.paidAt DESC
+        """
+        
+        result = db.run(query, groupId=group_id)
+        settlements = []
+        
+        for record in result:
+            settlement_node = record['s']
+            from_user = record['fromUser']
+            to_user = record['toUser']
+            
+            settlements.append({
+                'id': settlement_node['id'],
+                'amount': settlement_node['amount'],
+                'paidAt': settlement_node['paidAt'].isoformat() if hasattr(settlement_node['paidAt'], 'isoformat') else str(settlement_node['paidAt']),
+                'groupId': group_id,
+                'fromUserId': from_user['id'],
+                'fromUser': {
+                    'id': from_user['id'],
+                    'name': from_user['name']
+                },
+                'toUserId': to_user['id'],
+                'toUser': {
+                    'id': to_user['id'],
+                    'name': to_user['name']
+                }
+            })
+        
+        return settlements
+    
+    @staticmethod
+    def get_between_users(group_id, from_user_id, to_user_id):
+        """Get all settlements from one user to another in a group"""
+        db = get_db()
+        
+        query = """
+        MATCH (s:Settlement)-[:IN_GROUP]->(g:Group {id: $groupId})
+        MATCH (s)-[:FROM]->(fromUser:User {id: $fromUserId})
+        MATCH (s)-[:TO]->(toUser:User {id: $toUserId})
+        
+        RETURN s
+        ORDER BY s.paidAt DESC
+        """
+        
+        result = db.run(query, 
+                       groupId=group_id,
+                       fromUserId=from_user_id,
+                       toUserId=to_user_id)
+        
+        settlements = []
+        for record in result:
+            settlement_node = record['s']
+            settlements.append({
+                'id': settlement_node['id'],
+                'amount': settlement_node['amount'],
+                'paidAt': settlement_node['paidAt'].isoformat() if hasattr(settlement_node['paidAt'], 'isoformat') else str(settlement_node['paidAt']),
+                'fromUserId': from_user_id,
+                'toUserId': to_user_id
+            })
+        
+        return settlements
+    
+    @staticmethod
+    def get_total_paid(group_id, from_user_id, to_user_id):
+        """Get total amount paid from one user to another in a group"""
+        db = get_db()
+        
+        query = """
+        MATCH (s:Settlement)-[:IN_GROUP]->(g:Group {id: $groupId})
+        MATCH (s)-[:FROM]->(:User {id: $fromUserId})
+        MATCH (s)-[:TO]->(:User {id: $toUserId})
+        
+        RETURN COALESCE(sum(s.amount), 0) as totalPaid
+        """
+        
+        result = db.run(query,
+                       groupId=group_id,
+                       fromUserId=from_user_id,
+                       toUserId=to_user_id)
+        
+        record = result.single()
+        return record['totalPaid'] if record else 0.0
+    
+    @staticmethod
+    def delete_for_group(group_id):
+        """Delete all settlements for a group"""
+        db = get_db()
+        
+        query = """
+        MATCH (s:Settlement)-[:IN_GROUP]->(g:Group {id: $groupId})
+        DETACH DELETE s
+        RETURN count(s) as deleted
+        """
+        
+        result = db.run(query, groupId=group_id)
+        record = result.single()
+        return record['deleted'] if record else 0-e 
+--- END: ./backend/models/settlement.py ---
+
+--- START: ./backend/models/group.py ---
+import uuid
+from database import get_db
+
+class Group:
+    @staticmethod
+    def create(name, creator_id):
+        """Create a new group and add creator as first member"""
+        db = get_db()
+        group_id = str(uuid.uuid4())
+        
+        query = """
+        MATCH (u:User {id: $creatorId})
+        CREATE (g:Group {
+            id: $groupId,
+            name: $name,
+            createdAt: datetime()
+        })
+        CREATE (u)-[:MEMBER_OF]->(g)
+        RETURN g
+        """
+        
+        result = db.run(query, 
+                       groupId=group_id,
+                       name=name,
+                       creatorId=creator_id)
+        
+        record = result.single()
+        if record:
+            group_node = record['g']
+            return {
+                'id': group_node['id'],
+                'name': group_node['name']
+            }
+        return None
+    
+    @staticmethod
+    def find_by_id(group_id, user_id=None):
+        """Find group by ID, optionally verify user is a member"""
+        db = get_db()
+        
+        if user_id:
+            query = """
+            MATCH (u:User {id: $userId})-[:MEMBER_OF]->(g:Group {id: $groupId})
+            RETURN g
+            """
+            result = db.run(query, groupId=group_id, userId=user_id)
+        else:
+            query = """
+            MATCH (g:Group {id: $groupId})
+            RETURN g
+            """
+            result = db.run(query, groupId=group_id)
+        
+        record = result.single()
+        if record:
+            group_node = record['g']
+            return {
+                'id': group_node['id'],
+                'name': group_node['name']
+            }
+        return None
+    
+    @staticmethod
+    def get_with_details(group_id, user_id):
+        """Get group with members and expenses"""
+        db = get_db()
+        
+        query = """
+        MATCH (u:User {id: $userId})-[:MEMBER_OF]->(g:Group {id: $groupId})
+        
+        OPTIONAL MATCH (g)<-[:MEMBER_OF]-(member:User)
+        
+        OPTIONAL MATCH (g)<-[:BELONGS_TO]-(expense:Expense)
+        OPTIONAL MATCH (expense)<-[:PAID]-(paidBy:User)
+        OPTIONAL MATCH (expense)<-[:PARTICIPANT_IN]-(participant:User)
+        
+        WITH g, 
+             collect(DISTINCT {
+                 id: member.id,
+                 name: member.name,
+                 email: member.email
+             }) as members,
+             collect(DISTINCT {
+                 expense: expense,
+                 paidBy: paidBy,
+                 participants: collect(DISTINCT participant)
+             }) as expenseData
+        
+        RETURN g, members, expenseData
+        """
+        
+        result = db.run(query, groupId=group_id, userId=user_id)
+        record = result.single()
+        
+        if not record:
+            return None
+        
+        group_node = record['g']
+        members = [m for m in record['members'] if m['id'] is not None]
+        
+        expenses = []
+        for exp_data in record['expenseData']:
+            expense = exp_data['expense']
+            if expense is None:
+                continue
+                
+            paidBy = exp_data['paidBy']
+            participants = [p for p in exp_data['participants'] if p is not None]
+            
+            expenses.append({
+                'id': expense['id'],
+                'description': expense['description'],
+                'amount': expense['amount'],
+                'createdAt': expense['createdAt'].isoformat() if hasattr(expense['createdAt'], 'isoformat') else str(expense['createdAt']),
+                'paidById': paidBy['id'] if paidBy else None,
+                'paidBy': {
+                    'id': paidBy['id'],
+                    'name': paidBy['name'],
+                    'email': paidBy['email']
+                } if paidBy else None,
+                'participants': [{
+                    'id': p['id'],
+                    'name': p['name'],
+                    'email': p['email']
+                } for p in participants]
+            })
+        
+        expenses.sort(key=lambda x: x['createdAt'], reverse=True)
+        
+        return {
+            'id': group_node['id'],
+            'name': group_node['name'],
+            'members': members,
+            'expenses': expenses
+        }
+    
+    @staticmethod
+    def add_member(group_id, user_email, current_user_id):
+        """Add a new member to the group"""
+        db = get_db()
+        
+        query = """
+        MATCH (currentUser:User {id: $currentUserId})-[:MEMBER_OF]->(g:Group {id: $groupId})
+        MATCH (newUser:User {email: $userEmail})
+        OPTIONAL MATCH (newUser)-[existingRel:MEMBER_OF]->(g)
+        WITH g, newUser, existingRel
+        WHERE existingRel IS NULL
+        CREATE (newUser)-[:MEMBER_OF]->(g)
+        RETURN newUser
+        """
+        
+        result = db.run(query, 
+                       groupId=group_id,
+                       userEmail=user_email,
+                       currentUserId=current_user_id)
+        
+        record = result.single()
+        return record is not None
+    
+    @staticmethod
+    def is_member(group_id, user_id):
+        """Check if user is a member of the group"""
+        db = get_db()
+        
+        query = """
+        MATCH (u:User {id: $userId})-[:MEMBER_OF]->(g:Group {id: $groupId})
+        RETURN count(u) > 0 as isMember
+        """
+        
+        result = db.run(query, groupId=group_id, userId=user_id)
+        record = result.single()
+        return record['isMember'] if record else False
+    
+    @staticmethod
+    def delete(group_id, user_id):
+        """Delete a group and all related data"""
+        db = get_db()
+        
+        query = """
+        MATCH (u:User {id: $userId})-[:MEMBER_OF]->(g:Group {id: $groupId})
+        OPTIONAL MATCH (g)<-[:IN_GROUP]-(s:Settlement)
+        DETACH DELETE s
+        WITH g
+        OPTIONAL MATCH (g)<-[:BELONGS_TO]-(e:Expense)
+        DETACH DELETE e
+        WITH g
+        DETACH DELETE g
+        RETURN count(g) as deleted
+        """
+        
+        result = db.run(query, groupId=group_id, userId=user_id)
+        record = result.single()
+        return record['deleted'] > 0 if record else False
+-e 
+--- END: ./backend/models/group.py ---
+
+--- START: ./backend/app.py ---
+from flask import Flask, jsonify
+from flask_cors import CORS
+from config import Config
+from routes.auth import auth_bp
+from routes.groups import groups_bp
+from routes.expenses import expenses_bp
+from routes.settlements import settlements_bp
+from database import init_db, close_db
+
+app = Flask(__name__)
+app.config.from_object(Config)
+
+# Enable CORS for Next.js frontend
+CORS(app, 
+     origins=["http://localhost:3000"],
+     supports_credentials=True,
+     allow_headers=["Content-Type", "Authorization"],
+     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+
+# Initialize database constraints and indexes
+with app.app_context():
+    init_db()
+
+# Register blueprints
+app.register_blueprint(auth_bp, url_prefix='/api/auth')
+app.register_blueprint(groups_bp, url_prefix='/api/groups')
+app.register_blueprint(expenses_bp, url_prefix='/api/expenses')
+app.register_blueprint(settlements_bp, url_prefix='/api/settlements')
+
+# Health check endpoint
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    return jsonify({"status": "healthy", "database": "neo4j"}), 200
+
+# Error handlers
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({"error": "Not found"}), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    return jsonify({"error": "Internal server error"}), 500
+
+# Cleanup on shutdown
+@app.teardown_appcontext
+def shutdown_session(exception=None):
+    close_db()
+
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0', port=5000)
+-e 
+--- END: ./backend/app.py ---
+
+--- START: ./backend/routes/auth.py ---
+from flask import Blueprint, request, jsonify
+import re
+from models.user import User
+from utils.auth import hash_password, verify_password, generate_token
+
+auth_bp = Blueprint('auth', __name__)
+
+def validate_email(email):
+    """Validate email format"""
+    pattern = r'^[^\s@]+@[^\s@]+\.[^\s@]+$'
+    return re.match(pattern, email) is not None
+
+def validate_password(password):
+    """Validate password complexity"""
+    if len(password) < 8:
+        return False, "Password must be at least 8 characters long."
+    if not re.search(r'[a-z]', password):
+        return False, "Password must contain at least one lowercase letter."
+    if not re.search(r'[A-Z]', password):
+        return False, "Password must contain at least one uppercase letter."
+    if not re.search(r'\d', password):
+        return False, "Password must contain at least one number."
+    return True, None
+
+@auth_bp.route('/register', methods=['POST'])
+def register():
+    """Register a new user"""
+    try:
+        data = request.get_json()
+        email = data.get('email')
+        name = data.get('name')
+        password = data.get('password')
+        
+        if not email or not name or not password:
+            return jsonify({"error": "Missing required fields"}), 400
+        
+        if not validate_email(email):
+            return jsonify({"error": "Please enter a valid email address."}), 400
+        
+        is_valid, error_msg = validate_password(password)
+        if not is_valid:
+            return jsonify({"error": error_msg}), 400
+        
+        if User.exists_by_email(email):
+            return jsonify({"error": "User with this email already exists."}), 409
+        
+        hashed_password = hash_password(password)
+        user = User.create(email, name, hashed_password)
+        
+        if not user:
+            return jsonify({"error": "Failed to create user"}), 500
+        
+        return jsonify({
+            "message": "User created successfully",
+            "user": {
+                "id": user['id'],
+                "email": user['email'],
+                "name": user['name']
+            }
+        }), 201
+        
+    except Exception as e:
+        print(f"Registration error: {e}")
+        return jsonify({"error": "Internal Server Error"}), 500
+
+@auth_bp.route('/login', methods=['POST'])
+def login():
+    """Login user and return JWT token"""
+    try:
+        data = request.get_json()
+        email = data.get('email')
+        password = data.get('password')
+        
+        if not email or not password:
+            return jsonify({"error": "Invalid credentials"}), 401
+        
+        user = User.find_by_email(email)
+        if not user or not user.get('hashedPassword'):
+            return jsonify({"error": "Invalid credentials"}), 401
+        
+        if not verify_password(password, user['hashedPassword']):
+            return jsonify({"error": "Invalid credentials"}), 401
+        
+        token = generate_token(user['id'])
+        
+        return jsonify({
+            "token": token,
+            "user": {
+                "id": user['id'],
+                "email": user['email'],
+                "name": user['name']
+            }
+        }), 200
+        
+    except Exception as e:
+        print(f"Login error: {e}")
+        return jsonify({"error": "Internal Server Error"}), 500
+
+@auth_bp.route('/session', methods=['GET'])
+def get_session():
+    """Get current user session"""
+    from utils.auth import get_current_user
+    
+    try:
+        user_id = get_current_user()
+        if not user_id:
+            return jsonify({"user": None}), 200
+        
+        user = User.find_by_id(user_id)
+        if not user:
+            return jsonify({"user": None}), 200
+        
+        return jsonify({
+            "user": {
+                "id": user['id'],
+                "email": user['email'],
+                "name": user['name']
+            }
+        }), 200
+        
+    except Exception as e:
+        print(f"Session error: {e}")
+        return jsonify({"error": "Internal Server Error"}), 500
+-e 
+--- END: ./backend/routes/auth.py ---
+
+--- START: ./backend/routes/settlements.py ---
+from flask import Blueprint, request, jsonify
+from models.settlement import Settlement
+from models.group import Group
+from models.expense import Expense
+from utils.auth import require_auth
+from utils.calculations import calculate_balances, settle_debts
+
+settlements_bp = Blueprint('settlements', __name__)
+
+@settlements_bp.route('', methods=['POST'])
+@require_auth
+def create_settlement(current_user_id):
+    """Record a settlement payment"""
+    try:
+        data = request.get_json()
+        group_id = data.get('groupId')
+        to_user_id = data.get('toUserId')
+        amount = data.get('amount')
+        
+        # Validation
+        if not group_id or not to_user_id or not amount:
+            return jsonify({"error": "Missing required fields"}), 400
+        
+        # Verify user is a member of the group
+        if not Group.is_member(group_id, current_user_id):
+            return jsonify({"error": "Forbidden"}), 403
+        
+        # Create settlement (current user is paying)
+        settlement = Settlement.create(
+            group_id=group_id,
+            from_user_id=current_user_id,
+            to_user_id=to_user_id,
+            amount=amount
+        )
+        
+        if not settlement:
+            return jsonify({"error": "Failed to record settlement"}), 500
+        
+        return jsonify(settlement), 201
+        
+    except Exception as e:
+        print(f"Create settlement error: {e}")
+        return jsonify({"error": "Failed to record settlement"}), 500
+
+@settlements_bp.route('/group/<group_id>', methods=['GET'])
+@require_auth
+def get_group_settlements(group_id, current_user_id):
+    """Get all settlements for a group"""
+    try:
+        # Verify user is a member
+        if not Group.is_member(group_id, current_user_id):
+            return jsonify({"error": "Forbidden"}), 403
+        
+        settlements = Settlement.get_for_group(group_id)
+        return jsonify(settlements), 200
+        
+    except Exception as e:
+        print(f"Get settlements error: {e}")
+        return jsonify({"error": "Failed to retrieve settlements"}), 500
+
+@settlements_bp.route('/balances/group/<group_id>', methods=['GET'])
+@require_auth
+def get_group_balances(group_id, current_user_id):
+    """Calculate and return balances and suggested payments for a group"""
+    try:
+        # Verify user is a member
+        if not Group.is_member(group_id, current_user_id):
+            return jsonify({"error": "Forbidden"}), 403
+        
+        # Get group details
+        group = Group.get_with_details(group_id, current_user_id)
+        if not group:
+            return jsonify({"error": "Group not found"}), 404
+        
+        # Get settlements
+        settlements = Settlement.get_for_group(group_id)
+        
+        # Calculate balances
+        balances = calculate_balances(
+            expenses=group['expenses'],
+            members=group['members'],
+            settlements=settlements
+        )
+        
+        # Generate payment suggestions
+        payments = settle_debts(balances)
+        
+        return jsonify({
+            "balances": balances,
+            "settlements": payments
+        }), 200
+        
+    except Exception as e:
+        print(f"Calculate balances error: {e}")
+        return jsonify({"error": "Failed to calculate balances"}), 500
+
+@settlements_bp.route('/balances', methods=['GET'])
+@require_auth
+def get_all_balances(current_user_id):
+    """Get balances across all groups for the current user"""
+    try:
+        from models.user import User
+        
+        # Get all user's groups
+        groups = User.get_groups(current_user_id)
+        
+        all_balances = {}
+        all_settlements = []
+        
+        for group in groups:
+            # Get group details
+            group_details = Group.get_with_details(group['id'], current_user_id)
+            if not group_details:
+                continue
+            
+            # Get settlements
+            settlements = Settlement.get_for_group(group['id'])
+            
+            # Calculate balances for this group
+            balances = calculate_balances(
+                expenses=group_details['expenses'],
+                members=group_details['members'],
+                settlements=settlements
+            )
+            
+            # Generate payment suggestions
+            payments = settle_debts(balances)
+            
+            # Add to overall results
+            for user_id, balance in balances.items():
+                if user_id not in all_balances:
+                    all_balances[user_id] = 0.0
+                all_balances[user_id] += balance
+            
+            # Add group info to settlements
+            for payment in payments:
+                payment['groupId'] = group['id']
+                payment['groupName'] = group['name']
+                all_settlements.append(payment)
+        
+        return jsonify({
+            "balances": all_balances,
+            "settlements": all_settlements
+        }), 200
+        
+    except Exception as e:
+        print(f"Calculate all balances error: {e}")
+        return jsonify({"error": "Failed to calculate balances"}), 500-e 
+--- END: ./backend/routes/settlements.py ---
+
+--- START: ./backend/routes/expenses.py ---
+from flask import Blueprint, request, jsonify
+from models.expense import Expense
+from models.group import Group
+from utils.auth import require_auth
+
+expenses_bp = Blueprint('expenses', __name__)
+
+@expenses_bp.route('', methods=['POST'])
+@require_auth
+def create_expense(current_user_id):
+    """Create a new expense"""
+    try:
+        data = request.get_json()
+        description = data.get('description')
+        amount = data.get('amount')
+        group_id = data.get('groupId')
+        participant_ids = data.get('participantIds', [])
+        
+        # Validation
+        if not description or not amount or not group_id or not participant_ids:
+            return jsonify({"error": "Missing required fields"}), 400
+        
+        # Verify user is a member of the group
+        if not Group.is_member(group_id, current_user_id):
+            return jsonify({"error": "Forbidden"}), 403
+        
+        # Create expense (current user is the payer)
+        expense = Expense.create(
+            description=description,
+            amount=amount,
+            group_id=group_id,
+            paid_by_id=current_user_id,
+            participant_ids=participant_ids
+        )
+        
+        if not expense:
+            return jsonify({"error": "Failed to create expense"}), 500
+        
+        return jsonify(expense), 201
+        
+    except Exception as e:
+        print(f"Create expense error: {e}")
+        return jsonify({"error": "Failed to create expense"}), 500
+
+@expenses_bp.route('/<expense_id>', methods=['GET'])
+@require_auth
+def get_expense(expense_id, current_user_id):
+    """Get expense details"""
+    try:
+        expense = Expense.find_by_id(expense_id)
+        
+        if not expense:
+            return jsonify({"error": "Expense not found"}), 404
+        
+        # Verify user is a member of the group
+        if not Group.is_member(expense['groupId'], current_user_id):
+            return jsonify({"error": "Forbidden"}), 403
+        
+        return jsonify(expense), 200
+        
+    except Exception as e:
+        print(f"Get expense error: {e}")
+        return jsonify({"error": "Failed to retrieve expense"}), 500
+
+@expenses_bp.route('/<expense_id>', methods=['DELETE'])
+@require_auth
+def delete_expense(expense_id, current_user_id):
+    """Delete an expense"""
+    try:
+        success = Expense.delete(expense_id, current_user_id)
+        
+        if not success:
+            return jsonify({"error": "Forbidden or Not Found"}), 403
+        
+        return jsonify({"message": "Expense deleted successfully"}), 200
+        
+    except Exception as e:
+        print(f"Delete expense error: {e}")
+        return jsonify({"error": "Failed to delete expense"}), 500
+
+@expenses_bp.route('/group/<group_id>', methods=['GET'])
+@require_auth
+def get_group_expenses(group_id, current_user_id):
+    """Get all expenses for a group"""
+    try:
+        # Verify user is a member
+        if not Group.is_member(group_id, current_user_id):
+            return jsonify({"error": "Forbidden"}), 403
+        
+        expenses = Expense.get_all_for_group(group_id)
+        return jsonify(expenses), 200
+        
+    except Exception as e:
+        print(f"Get group expenses error: {e}")
+        return jsonify({"error": "Failed to retrieve expenses"}), 500
+
+@expenses_bp.route('/user', methods=['GET'])
+@require_auth
+def get_user_expenses(current_user_id):
+    """Get all expenses the current user is involved in"""
+    try:
+        expenses = Expense.get_user_expenses(current_user_id)
+        return jsonify(expenses), 200
+        
+    except Exception as e:
+        print(f"Get user expenses error: {e}")
+        return jsonify({"error": "Failed to retrieve expenses"}), 500-e 
+--- END: ./backend/routes/expenses.py ---
+
+--- START: ./backend/routes/groups.py ---
+from flask import Blueprint, request, jsonify
+from models.group import Group
+from models.user import User
+from utils.auth import require_auth
+
+groups_bp = Blueprint('groups', __name__)
+
+@groups_bp.route('', methods=['POST'])
+@require_auth
+def create_group(current_user_id):
+    """Create a new group"""
+    try:
+        data = request.get_json()
+        name = data.get('name')
+        
+        if not name:
+            return jsonify({"error": "Group name is required"}), 400
+        
+        group = Group.create(name, current_user_id)
+        
+        if not group:
+            return jsonify({"error": "Failed to create group"}), 500
+        
+        return jsonify(group), 201
+        
+    except Exception as e:
+        print(f"Create group error: {e}")
+        return jsonify({"error": "Failed to create group"}), 500
+
+@groups_bp.route('/<group_id>', methods=['GET'])
+@require_auth
+def get_group(group_id, current_user_id):
+    """Get group details with members and expenses"""
+    try:
+        group = Group.get_with_details(group_id, current_user_id)
+        
+        if not group:
+            return jsonify({"error": "Forbidden or Not Found"}), 403
+        
+        return jsonify(group), 200
+        
+    except Exception as e:
+        print(f"Get group error: {e}")
+        return jsonify({"error": "Failed to retrieve group"}), 500
+
+@groups_bp.route('/<group_id>', methods=['DELETE'])
+@require_auth
+def delete_group(group_id, current_user_id):
+    """Delete a group and all its data"""
+    try:
+        success = Group.delete(group_id, current_user_id)
+        
+        if not success:
+            return jsonify({"error": "Forbidden or Not Found"}), 403
+        
+        return jsonify({"message": "Group deleted successfully"}), 200
+        
+    except Exception as e:
+        print(f"Delete group error: {e}")
+        return jsonify({"error": "Failed to delete group"}), 500
+
+@groups_bp.route('/<group_id>/members', methods=['POST'])
+@require_auth
+def add_member(group_id, current_user_id):
+    """Add a new member to the group"""
+    try:
+        data = request.get_json()
+        email = data.get('email')
+        
+        if not email:
+            return jsonify({"error": "Email is required"}), 400
+        
+        user_to_add = User.find_by_email(email)
+        if not user_to_add:
+            return jsonify({"error": "User with that email not found."}), 404
+        
+        if not Group.is_member(group_id, current_user_id):
+            return jsonify({"error": "Forbidden: You are not a member of this group."}), 403
+        
+        success = Group.add_member(group_id, email, current_user_id)
+        
+        if not success:
+            return jsonify({"error": "User is already a member of this group."}), 409
+        
+        return jsonify({"message": "User added successfully!"}), 200
+        
+    except Exception as e:
+        print(f"Add member error: {e}")
+        return jsonify({"error": "Failed to add member"}), 500
+
+@groups_bp.route('/user', methods=['GET'])
+@require_auth
+def get_user_groups(current_user_id):
+    """Get all groups the current user is a member of"""
+    try:
+        groups = User.get_groups(current_user_id)
+        return jsonify(groups), 200
+        
+    except Exception as e:
+        print(f"Get user groups error: {e}")
+        return jsonify({"error": "Failed to retrieve groups"}), 500
+-e 
+--- END: ./backend/routes/groups.py ---
+
+--- START: ./README.md ---
+# Expense Splitter - Neo4j Backend
+
+A Flask-based REST API backend using Neo4j graph database for the Expense Splitter application.
+
+## 🎯 Project Overview
+
+This project demonstrates the use of **Neo4j Graph Database** for managing complex relationships in an expense-splitting application. It showcases:
+
+- **Graph Data Model**: Users, Groups, Expenses, and Settlements as nodes with meaningful relationships
+- **Complex Queries**: Leveraging graph traversal for balance calculations and debt settlements
+- **CRUD Operations**: Full Create, Read, Update, Delete functionality using Cypher queries
+- **Relationship Benefits**: Efficient querying of interconnected data (who owes whom, group memberships, etc.)
+
+## 📊 Graph Data Model
+
+### Nodes
+```
+(:User {id, email, name, hashedPassword, createdAt})
+(:Group {id, name, createdAt})
+(:Expense {id, description, amount, createdAt})
+(:Settlement {id, amount, paidAt})
+```
+
+### Relationships
+```
+(User)-[:MEMBER_OF]->(Group)
+(User)-[:PAID]->(Expense)
+(User)-[:PARTICIPANT_IN]->(Expense)
+(Expense)-[:BELONGS_TO]->(Group)
+(Settlement)-[:IN_GROUP]->(Group)
+(Settlement)-[:FROM]->(User)
+(Settlement)-[:TO]->(User)
+```
+
+## 🚀 Setup Instructions
+
+### Prerequisites
+- Python 3.8+
+- Neo4j Aura account (or local Neo4j instance)
+- Node.js 16+ (for frontend)
+
+### Step 1: Clone the Repository
+```bash
+git clone <your-repo-url>
+cd project
+```
+
+### Step 2: Backend Setup
+
+1. **Create virtual environment** (recommended)
+```bash
+cd backend
+python -m venv venv
+
+# Activate virtual environment
+# On macOS/Linux:
+source venv/bin/activate
+# On Windows:
+venv\Scripts\activate
+```
+
+2. **Install dependencies**
+```bash
+pip install -r requirements.txt
+```
+
+3. **Configure environment variables**
+```bash
+# Copy the example env file
+cp .env.example .env
+
+# Edit .env with your Neo4j credentials
+nano .env  # or use your preferred editor
+```
+
+Add your Neo4j Aura credentials:
+```env
+NEO4J_URI=neo4j+s://xxxxx.databases.neo4j.io
+NEO4J_USERNAME=neo4j
+NEO4J_PASSWORD=your_password_here
+NEO4J_DATABASE=neo4j
+
+SECRET_KEY=generate-a-random-secret-key-here
+JWT_SECRET_KEY=generate-another-random-key-here
+```
+
+4. **Initialize the database**
+```bash
+python app.py
+```
+
+On first run, the application will automatically create:
+- Uniqueness constraints for all node types
+- Indexes for performance optimization
+
+You should see output like:
+```
+✓ Created: (u:User)
+✓ Created: (g:Group)
+✓ Created: (e:Expense)
+✓ Created: (s:Settlement)
+✅ Database initialization complete!
+```
+
+5. **Run the Flask server**
+```bash
+python app.py
+```
+
+The API will be available at `http://localhost:5000`
+
+### Step 3: Frontend Setup
+
+1. **Navigate to frontend directory**
+```bash
+cd ../  # Go back to project root if in backend
+# Your Next.js frontend should already be there
+```
+
+2. **Update API endpoints** (if needed)
+
+The frontend needs to be configured to call the Flask backend instead of Next.js API routes. You have two options:
+
+**Option A: Use a proxy (Recommended)**
+Add to your `package.json`:
+```json
+{
+  "proxy": "http://localhost:5000"
+}
+```
+
+**Option B: Update API calls directly**
+Change API calls from `/api/...` to `http://localhost:5000/api/...`
+
+3. **Install dependencies** (if not already done)
+```bash
+npm install
+```
+
+4. **Run the development server**
+```bash
+npm run dev
+```
+
+The frontend will be available at `http://localhost:3000`
+
+## 📡 API Endpoints
+
+### Authentication
+- `POST /api/auth/register` - Register new user
+- `POST /api/auth/login` - Login and get JWT token
+- `GET /api/auth/session` - Get current session
+
+### Groups
+- `POST /api/groups` - Create new group
+- `GET /api/groups/<id>` - Get group details
+- `DELETE /api/groups/<id>` - Delete group
+- `POST /api/groups/<id>/members` - Add member to group
+- `GET /api/groups/user` - Get all user's groups
+
+### Expenses
+- `POST /api/expenses` - Create new expense
+- `GET /api/expenses/<id>` - Get expense details
+- `DELETE /api/expenses/<id>` - Delete expense
+- `GET /api/expenses/group/<group_id>` - Get group expenses
+- `GET /api/expenses/user` - Get user's expenses
+
+### Settlements
+- `POST /api/settlements` - Record a payment
+- `GET /api/settlements/group/<group_id>` - Get group settlements
+- `GET /api/settlements/balances/group/<group_id>` - Get balances and payment suggestions
+- `GET /api/settlements/balances` - Get all balances across groups
+
+## 🔐 Authentication
+
+The API uses JWT (JSON Web Tokens) for authentication. Include the token in the Authorization header:
+
+```
+Authorization: Bearer <your-jwt-token>
+```
+
+## 🧪 Testing the API
+
+### Using curl
+
+1. **Register a user**
+```bash
+curl -X POST http://localhost:5000/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "test@example.com",
+    "name": "Test User",
+    "password": "Password123"
+  }'
+```
+
+2. **Login**
+```bash
+curl -X POST http://localhost:5000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "test@example.com",
+    "password": "Password123"
+  }'
+```
+
+Save the returned token for subsequent requests.
+
+3. **Create a group**
+```bash
+curl -X POST http://localhost:5000/api/groups \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <your-token>" \
+  -d '{
+    "name": "Trip to Paris"
+  }'
+```
+
+### Using Postman
+
+Import the API endpoints and test them with the Postman collection (you can create one based on the endpoints above).
+
+## 💡 Neo4j Benefits Demonstrated
+
+### 1. **Relationship Queries**
+Neo4j excels at querying relationships. Example: "Find all expenses where a user is involved":
+
+```cypher
+MATCH (u:User {id: $userId})
+MATCH (e:Expense)
+WHERE (u)-[:PAID]->(e) OR (u)-[:PARTICIPANT_IN]->(e)
+RETURN e
+```
+
+### 2. **Graph Traversal**
+Finding indirect relationships is natural:
+
+```cypher
+// Find all users in my groups
+MATCH (me:User {id: $myId})-[:MEMBER_OF]->(g:Group)<-[:MEMBER_OF]-(others:User)
+RETURN DISTINCT others
+```
+
+### 3. **Pattern Matching**
+Complex patterns are easy to express:
+
+```cypher
+// Find expenses where I paid but others participated
+MATCH (me:User {id: $myId})-[:PAID]->(e:Expense)<-[:PARTICIPANT_IN]-(others:User)
+WHERE me <> others
+RETURN e, others
+```
+
+### 4. **Aggregations**
+Calculate balances efficiently:
+
+```cypher
+// Get total owed to a user
+MATCH (u:User {id: $userId})-[:PAID]->(e:Expense)<-[:PARTICIPANT_IN]-(others:User)
+WITH u, e, count(others) as numParticipants
+RETURN sum(e.amount - (e.amount / numParticipants)) as totalOwed
+```
+
+## 📁 Project Structure
+
+```
+backend/
+├── app.py                 # Flask application entry point
+├── config.py              # Configuration management
+├── database.py            # Neo4j connection and initialization
+├── requirements.txt       # Python dependencies
+├── .env.example          # Environment variables template
+│
+├── models/               # Data models (Neo4j operations)
+│   ├── user.py
+│   ├── group.py
+│   ├── expense.py
+│   └── settlement.py
+│
+├── routes/               # API route blueprints
+│   ├── auth.py
+│   ├── groups.py
+│   ├── expenses.py
+│   └── settlements.py
+│
+└── utils/                # Utility functions
+    ├── auth.py           # JWT authentication
+    └── calculations.py   # Balance calculations
+```
+
+## 🐛 Troubleshooting
+
+### Connection Issues
+- Verify your Neo4j Aura credentials in `.env`
+- Check if your IP is whitelisted in Neo4j Aura
+- Ensure the URI format is correct: `neo4j+s://...`
+
+### Import Errors
+- Make sure you're in the virtual environment
+- Reinstall dependencies: `pip install -r requirements.txt`
+
+### CORS Issues
+- Verify the frontend URL in `app.py` CORS configuration
+- Check browser console for specific CORS errors
+
+## 📚 Assignment Documentation
+
+### Database Setup and Configuration (5 marks)
+- Neo4j Aura instance configured
+- Constraints and indexes created automatically
+- Connection pooling and session management
+
+### Data Model Design (10 marks)
+- Graph model with 4 node types and 7 relationship types
+- Uniqueness constraints on IDs
+- Indexes for performance optimization
+- Clear separation of concerns in models
+
+### CRUD Operations Implementation (10 marks)
+- Complete CRUD for Users, Groups, Expenses, Settlements
+- Graph-native queries using Cypher
+- Proper error handling and validation
+- RESTful API design
+
+### NoSQL Feature Demonstration (5 marks)
+- Complex relationship queries
+- Graph traversal for balance calculations
+- Pattern matching for debt simplification
+- Efficient aggregations using graph structure
+
+## 📝 License
+
+This project is for educational purposes as part of the NoSQL Database course (BCSE406L).
+
+## 👥 Author
+
+Karthik Yadav - VIT University-e 
+--- END: ./README.md ---
+

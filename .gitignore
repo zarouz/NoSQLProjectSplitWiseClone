@@ -1,0 +1,15 @@
+Neo4j-f90bf066-Created-2025-11-02.txt
+.env
+.venv
+backend/__pycache__
+# Frontend
+/frontend/node_modules/
+/frontend/dist/
+/frontend/.vite/
+
+# Secrets
+
+.env.local
+
+# OS
+.DS_Store
