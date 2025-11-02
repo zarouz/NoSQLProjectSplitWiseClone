@@ -16,8 +16,12 @@
             "destination": "backend/app.py"
         },
         {
+            "source": "/assets/(.*)",
+            "destination": "/assets/$1"
+        },
+        {
             "source": "/(.*)",
-            "destination": "frontend/"
+            "destination": "/index.html"
         }
     ]
 }
