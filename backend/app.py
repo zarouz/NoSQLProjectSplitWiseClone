@@ -1,4 +1,4 @@
-from flask import Flask, jsonify
+'''from flask import Flask, jsonify
 from flask_cors import CORS
 from config import Config
 from routes.auth import auth_bp
@@ -46,5 +46,71 @@ def internal_error(error):
 def shutdown_session(exception=None):
     close_db()
 
-if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+#if __name__ == '__main__':
+#    app.run(debug=True, host='0.0.0.0', port=5000)
+'''
+
+from flask import Flask, jsonify
+from flask_cors import CORS
+from config import Config
+from routes.auth import auth_bp
+from routes.groups import groups_bp
+from routes.expenses import expenses_bp
+from routes.settlements import settlements_bp
+from database import init_db, close_db
+
+app = Flask(__name__)
+app.config.from_object(Config)
+
+# --- FIX: Update CORS for Production ---
+# We must allow both your local dev environment AND your Vercel production URL.
+# Vercel sets this "VERCEL_URL" env variable for us.
+import os
+prod_origin = os.getenv("VERCEL_URL") 
+
+origins_list = ["http://localhost:3000"]
+if prod_origin:
+    # Add the full production URL
+    origins_list.append(f"https://{prod_origin}")
+    # Add the frontend preview URL (from your logs)
+    origins_list.append("https://no-sql-project-split-wise-clone-63c0q4i7y.vercel.app")
+
+CORS(app, 
+     origins=origins_list,
+     supports_credentials=True,
+     allow_headers=["Content-Type", "Authorization"],
+     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+# ------------------------------------
+
+# Initialize database constraints and indexes
+with app.app_context():
+    init_db()
+
+# Register blueprints
+app.register_blueprint(auth_bp, url_prefix='/api/auth')
+app.register_blueprint(groups_bp, url_prefix='/api/groups')
+app.register_blueprint(expenses_bp, url_prefix='/api/expenses')
+app.register_blueprint(settlements_bp, url_prefix='/api/settlements')
+
+# Health check endpoint
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    return jsonify({"status": "healthy", "database": "neo4j"}), 200
+
+# Error handlers
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({"error": "Not found"}), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    return jsonify({"error": "Internal server error"}), 500
+
+# Cleanup on shutdown
+@app.teardown_appcontext
+def shutdown_session(exception=None):
+    close_db()
+
+# This part remains commented out for production
+#if __name__ == '__main__':
+#    app.run(debug=True, host='0.0.0.0', port=5000)
